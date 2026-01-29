@@ -7,26 +7,35 @@ const router = createRouter({
     {
       path: '/login',
       name: 'login',
-      component:() => import('../views/LoginView.vue'),
+      component: () => import('../views/LoginView.vue'),
     },
     {
       path: '/',
       name: 'home',
       component: HomeView,
-      meta:{ requiresAuth: true }
+      meta: { requiresAuth: true }
     },
     {
       path: '/users',
       name: 'users',
       component: () => import('../views/UserView.vue'),
-      meta:{ requiresAuth: true }
+      meta: { requiresAuth: true }
     },
     {
       path: '/profile',
       name: 'profile',
       component: () => import('../views/ProfileView.vue'),
-      meta:{ requiresAuth: true }
-    }
+      meta: { requiresAuth: true }
+    },
+    {
+      path: "/register",
+      component: () => import("@/views/Register.vue")
+    },
+    {
+      path: '/auth/wechat/callback',
+      name: 'wechat-callback',
+      component: () => import('@/views/WechatCallbackView.vue'),
+    },
   ],
 })
 

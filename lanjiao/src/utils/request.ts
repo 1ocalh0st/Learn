@@ -1,25 +1,47 @@
 import { useUserStore } from "@/stores/user";
 
+export class ApiError extends Error {
+  code?: string;
+  status: number;
+  data?: any;
+
+  constructor(message: string, status: number, code?: string, data?: any) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.code = code;
+    this.data = data;
+  }
+}
+
 export async function request<T>(url: string, options: RequestInit = {}) {
   const user = useUserStore();
 
-  // 规范化请求头，并把 Content-Type 设为 application/json
+  // Normalize headers and default to JSON.
   const headers = new Headers(options.headers || {});
   headers.set("Content-Type", "application/json");
 
-  // 如果有鉴权 token，就带上。
+  // Attach auth token if present.
   if (user.token) {
     headers.set("Authorization", `Bearer ${user.token}`);
   }
 
-  // 发起请求；如果返回非 2xx，就抛出带信息的错误。
+  // Send request; throw a rich error on non-2xx.
   const res = await fetch(url, { ...options, headers });
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.message || `HTTP ${res.status}`);
+    if (res.status === 401) {
+      user.logout();
+    }
+    throw new ApiError(
+      err.message || `HTTP ${res.status}`,
+      res.status,
+      err.code,
+      err
+    );
   }
 
-  // 解析 JSON 响应。
+  // Parse JSON response.
   return (await res.json()) as T;
 }
