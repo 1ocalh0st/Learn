@@ -3,7 +3,7 @@ const bcrypt = require("bcrypt");
 
 async function listUsers() {
   const [rows] = await pool.query(
-    "SELECT id, username, name, status, created_at, updated_at FROM users ORDER BY id"
+    "SELECT id, username, name, status, created_at, updated_at FROM users"
   );
   return rows;
 }

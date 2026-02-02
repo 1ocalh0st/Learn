@@ -18,10 +18,22 @@ async function getUserByUsername(username) {
 
 async function getUserById(id) {
   const [rows] = await pool.execute(
-    "SELECT id, username, name, status FROM users WHERE id = ? LIMIT 1",
+    "SELECT id, username, name, password_hash, status FROM users WHERE id = ? LIMIT 1",
     [id]
   );
   return rows[0] || null;
 }
 
-module.exports = { createUser, getUserByUsername, getUserById };
+async function updateUserPassword(id, password_hash) {
+  await pool.execute("UPDATE users SET password_hash = ? WHERE id = ?", [
+    password_hash,
+    id,
+  ]);
+}
+
+module.exports = {
+  createUser,
+  getUserByUsername,
+  getUserById,
+  updateUserPassword,
+};

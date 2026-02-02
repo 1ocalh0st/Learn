@@ -34,6 +34,8 @@
         :loading="loading"
         :pagination="pagination"
         :bordered="false"
+        :scroll="{ y: 600 }"
+        :sticky-header="true"
         row-key="id"
         stripe
         hoverable
@@ -185,10 +187,11 @@
       v-model:visible="modalVisible"
       :title="isEdit ? '编辑用户' : '添加用户'"
       :ok-loading="submitting"
+      :mask-closable="false"
       @ok="handleModalOk"
       @cancel="handleModalCancel"
     >
-      <a-form :model="formData" layout="vertical" ref="formRef">
+      <a-form :model="formData" layout="vertical" ref="formRef" @keyup.enter="handleModalOk">
         <a-form-item 
           label="用户名" 
           field="username"
@@ -290,20 +293,36 @@ const formData = reactive({
 
 const pagination = reactive({
   current: 1,
-  pageSize: 10,
+  pageSize: 20,
+  total: 0,
   showTotal: true,
   showJumper: true,
   showPageSize: true,
+  onChange: (page: number) => {
+    pagination.current = page;
+  },
+  onPageSizeChange: (pageSize: number) => {
+    pagination.pageSize = pageSize;
+    pagination.current = 1; // 重置到第一页
+  },
 });
 
 const filteredUsers = computed(() => {
-  if (!searchKeyword.value) return users.value;
-  const keyword = searchKeyword.value.toLowerCase();
-  return users.value.filter(
-    (u) =>
-      u.username?.toLowerCase().includes(keyword) ||
-      (u.name && u.name.toLowerCase().includes(keyword))
-  );
+  let result = users.value;
+  
+  if (searchKeyword.value) {
+    const keyword = searchKeyword.value.toLowerCase();
+    result = users.value.filter(
+      (u) =>
+        u.username?.toLowerCase().includes(keyword) ||
+        (u.name && u.name.toLowerCase().includes(keyword))
+    );
+  }
+  
+  // 更新分页总数
+  pagination.total = result.length;
+  
+  return result;
 });
 
 async function load() {
@@ -478,6 +497,27 @@ onMounted(() => {
   padding: 0;
 }
 
+/* 表格固定表头样式 */
+.table-card :deep(.arco-table-container) {
+  border-radius: 12px;
+}
+
+.table-card :deep(.arco-table-thead) {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.table-card :deep(.arco-table-th) {
+  background-color: #f7f8fa !important;
+  font-weight: 600;
+}
+
+.table-card :deep(.arco-table-body) {
+  overflow-y: auto;
+}
+
+
 /* 用户信息单元格 */
 .user-info {
   display: flex;
@@ -486,7 +526,7 @@ onMounted(() => {
 }
 
 .user-avatar {
-  background: linear-gradient(135deg, #165dff 0%, #722ed1 100%);
+  background: linear-gradient(135deg, #4079ff 0%, #832bff 100%);
   color: white;
   font-weight: 600;
 }

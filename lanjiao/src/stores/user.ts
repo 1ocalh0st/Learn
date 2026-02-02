@@ -77,8 +77,9 @@ export const useUserStore = defineStore('user', {
     token: '',
     name: '',
     exp: null as number | null,
+    info: null as any,
   }),
-  actions:{
+  actions: {
     initFromStorage() {
       if (!canUseWindow) return;
       const raw = safeGetItem(KEY);
@@ -107,12 +108,15 @@ export const useUserStore = defineStore('user', {
       safeSetItem(KEY, JSON.stringify({ token, name, exp: expMs ?? undefined }));
       scheduleExpiry(expMs, () => this.logout());
     },
-    logout(){
+    logout() {
       this.token = '';
       this.name = '';
       this.exp = null;
       clearExpiryTimer();
       safeRemoveItem(KEY);
+    },
+    setInfo(info: any) {
+      this.info = info;
     },
   },
 });

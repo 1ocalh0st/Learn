@@ -36,6 +36,16 @@ const router = createRouter({
       name: 'wechat-callback',
       component: () => import('@/views/WechatCallbackView.vue'),
     },
+    {
+      path: '/auth/qq/callback',
+      name: 'qq-callback',
+      component: () => import('@/views/AuthQQCallback.vue'),
+    },
+    {
+      path: '/auth/github/callback',
+      name: 'github-callback',
+      component: () => import('@/views/AuthGithubCallback.vue'),
+    },
   ],
 })
 

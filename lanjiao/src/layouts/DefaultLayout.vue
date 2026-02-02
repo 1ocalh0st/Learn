@@ -25,7 +25,7 @@
         </a-menu>
 
         <div class="header-right">
-          <a-dropdown trigger="hover">
+          <a-dropdown trigger="click">
             <a-button type="text" class="user-btn">
               <a-avatar :size="28" class="user-avatar">
                 <icon-user />
@@ -97,6 +97,7 @@ function goSettings() {
 function handleLogout() {
   user.logout();
   Message.success("已成功退出登录");
+  router.push("/login");
 }
 </script>
 

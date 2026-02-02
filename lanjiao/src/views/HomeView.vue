@@ -212,6 +212,7 @@ async function me() {
 function handleLogout() {
   user.logout();
   Message.success("已成功退出登录");
+  router.push("/login");
 }
 
 function navigateTo(path: string) {

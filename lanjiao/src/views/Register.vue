@@ -48,15 +48,32 @@
 
           <!-- 快速注册方式 -->
           <div class="quick-register">
-            <a-button 
-              size="large" 
-              long 
-              class="wechat-btn"
-              @click="showWechatLogin"
-            >
-              <template #icon><icon-wechat /></template>
-              微信快速注册
-            </a-button>
+            <div class="quick-register-grid">
+              <a-button 
+                size="large" 
+                class="social-register-btn wechat-btn"
+                @click="showWechatLogin"
+              >
+                <template #icon><icon-wechat /></template>
+                微信注册
+              </a-button>
+              <a-button 
+                size="large" 
+                class="social-register-btn qq-btn"
+                @click="showQQLogin"
+              >
+                <template #icon><icon-qq /></template>
+                QQ 注册
+              </a-button>
+              <a-button 
+                size="large" 
+                class="social-register-btn github-btn"
+                @click="showGithubLogin"
+              >
+                <template #icon><icon-github /></template>
+                GitHub
+              </a-button>
+            </div>
           </div>
 
           <a-divider orientation="center">
@@ -76,7 +93,7 @@
               label="用户名" 
               :rules="[
                 { required: true, message: '请输入用户名' },
-                { match: /^[a-zA-Z0-9_]+$/, message: '只能包含字母、数字和下划线' }
+                { match: /^[\u4e00-\u9fa5a-zA-Z0-9_]+$/, message: '只能包含中文、字母、数字和下划线' }
               ]"
             >
               <a-input
@@ -167,6 +184,20 @@
       redirect-to="/"
       @success="onWechatSuccess"
     />
+
+    <!-- QQ 登录弹窗 -->
+    <QQLoginModal 
+      v-model="qqModalVisible" 
+      redirect-to="/"
+      @success="onQQSuccess"
+    />
+
+    <!-- GitHub 登录弹窗 -->
+    <GithubLoginModal 
+      v-model="githubModalVisible" 
+      redirect-to="/"
+      @success="onGithubSuccess"
+    />
   </div>
 </template>
 
@@ -176,6 +207,8 @@ import { useRouter } from "vue-router";
 import { request, ApiError } from "@/utils/request";
 import { Message } from "@arco-design/web-vue";
 import WechatLoginModal from "@/components/WechatLoginModal.vue";
+import QQLoginModal from "@/components/QQLoginModal.vue";
+import GithubLoginModal from "@/components/GithubLoginModal.vue";
 import {
   IconApps,
   IconUser,
@@ -183,6 +216,8 @@ import {
   IconEdit,
   IconUserAdd,
   IconWechat,
+  IconQq,
+  IconGithub,
 } from "@arco-design/web-vue/es/icon";
 
 const router = useRouter();
@@ -196,14 +231,16 @@ const form = reactive({
 const loading = ref(false);
 const agreeTerms = ref(false);
 const wechatModalVisible = ref(false);
+const qqModalVisible = ref(false);
+const githubModalVisible = ref(false);
 
 async function handleSubmit() {
   if (!form.username) {
     Message.warning("请输入用户名");
     return;
   }
-  if (!/^[a-zA-Z0-9_]+$/.test(form.username)) {
-    Message.warning("用户名只能包含字母、数字和下划线");
+  if (!/^[\u4e00-\u9fa5a-zA-Z0-9_]+$/.test(form.username)) {
+    Message.warning("用户名只能包含中文、字母、数字和下划线");
     return;
   }
   if (form.password.length < 6) {
@@ -222,7 +259,13 @@ async function handleSubmit() {
       body: JSON.stringify(form),
     });
     Message.success("注册成功，正在跳转登录...");
-    setTimeout(() => router.replace("/login"), 1500);
+    setTimeout(() => router.replace({ 
+      path: "/login", 
+      query: { 
+        username: form.username,
+        password: form.password 
+      } 
+    }), 1500);
   } catch (e: any) {
     if (e instanceof ApiError) {
       if (e.code === "USERNAME_EXISTS") {
@@ -242,8 +285,24 @@ function showWechatLogin() {
   wechatModalVisible.value = true;
 }
 
+function showQQLogin() {
+  qqModalVisible.value = true;
+}
+
+function showGithubLogin() {
+  githubModalVisible.value = true;
+}
+
 function onWechatSuccess(userInfo: any) {
   console.log("WeChat register success:", userInfo);
+}
+
+function onQQSuccess(userInfo: any) {
+  console.log("QQ register success:", userInfo);
+}
+
+function onGithubSuccess(userInfo: any) {
+  console.log("GitHub register success:", userInfo);
 }
 </script>
 
@@ -381,21 +440,58 @@ function onWechatSuccess(userInfo: any) {
   margin-bottom: 16px;
 }
 
-.wechat-btn {
+.quick-register-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.social-register-btn {
   height: 44px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.social-register-btn.wechat-btn {
   background: #07c160;
   color: white;
   border: none;
-  border-radius: 8px;
-  font-size: 15px;
-  font-weight: 500;
-  transition: all 0.3s ease;
 }
 
-.wechat-btn:hover {
+.social-register-btn.wechat-btn:hover {
   background: #06ad56;
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(7, 193, 96, 0.35);
+}
+
+.social-register-btn.qq-btn {
+  background: #12b7f5;
+  color: white;
+  border: none;
+}
+
+.social-register-btn.qq-btn:hover {
+  background: #0ea5e0;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(18, 183, 245, 0.35);
+}
+
+.social-register-btn.github-btn {
+  background: #24292e;
+  color: white;
+  border: none;
+}
+
+.social-register-btn.github-btn:hover {
+  background: #3a4046;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(36, 41, 46, 0.35);
 }
 
 .register-form :deep(.arco-form-item-label-col) {

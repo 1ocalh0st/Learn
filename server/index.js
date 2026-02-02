@@ -7,6 +7,8 @@ const { pool } = require("./db");
 const authRoutes = require("./routes/auth");
 const userRoutes = require("./routes/users");
 const wechatRoutes = require("./routes/wechat");
+const qqRoutes = require("./routes/qq");
+const githubRoutes = require("./routes/github");
 
 const app = express();
 
@@ -29,8 +31,10 @@ async function testDB() {
 }
 testDB();
 
-// 先注册微信路由（不需要认证的放前面）
+// 先注册第三方登录路由（不需要认证的放前面）
 app.use("/api", wechatRoutes);
+app.use("/api", qqRoutes);
+app.use("/api", githubRoutes);
 app.use("/api", authRoutes);
 app.use("/api", userRoutes);
 

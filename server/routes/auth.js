@@ -6,6 +6,7 @@ const {
   loginJwt,
   loginLegacy,
   me,
+  changePassword,
 } = require("../controllers/auth.controller");
 
 const router = express.Router();
@@ -15,5 +16,6 @@ router.post("/auth/register", register);
 router.post("/auth/login", loginJwt);
 router.post("/login", loginLegacy);
 router.get("/me", auth, me);
+router.post("/auth/password", auth, changePassword);
 
 module.exports = router;

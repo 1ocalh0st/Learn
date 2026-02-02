@@ -40,7 +40,7 @@
         <div class="auth-card">
           <div class="card-header">
             <a-typography-title :heading="3" class="title">
-              欢迎回来 👋
+              欢迎回来
             </a-typography-title>
             <a-typography-paragraph type="secondary" class="subtitle">
               请登录您的账户以继续
@@ -79,6 +79,16 @@
               </a-input-password>
             </a-form-item>
 
+            <a-form-item field="captcha">
+              <div style="width: 100%; display: flex; justify-content: center;">
+                  <FlashCaptcha 
+                    ref="captchaRef"
+                    @valid="onCaptchaValid"
+                    @enter="handleSubmit"
+                    />
+                </div>
+            </a-form-item>
+
             <div class="form-options">
               <a-checkbox v-model="rememberMe">记住我</a-checkbox>
               <a-link>忘记密码？</a-link>
@@ -105,26 +115,19 @@
             <a-typography-text type="secondary">快速登录</a-typography-text>
           </a-divider>
 
-          <div class="social-login">
-            <a-button 
-              size="large" 
-              long 
-              class="wechat-btn"
-              @click="showWechatLogin"
-            >
-              <template #icon><icon-wechat /></template>
-              微信登录
-            </a-button>
-          </div>
-
           <div class="social-login-icons">
+            <a-tooltip content="微信登录">
+              <a-button shape="circle" size="large" class="social-btn wechat-btn" @click="showWechatLogin">
+                <icon-wechat />
+              </a-button>
+            </a-tooltip>
             <a-tooltip content="QQ 登录">
-              <a-button shape="circle" size="large" class="social-btn">
+              <a-button shape="circle" size="large" class="social-btn qq-btn" @click="showQQLogin">
                 <icon-qq />
               </a-button>
             </a-tooltip>
             <a-tooltip content="GitHub 登录">
-              <a-button shape="circle" size="large" class="social-btn">
+              <a-button shape="circle" size="large" class="social-btn github-btn" @click="showGithubLogin">
                 <icon-github />
               </a-button>
             </a-tooltip>
@@ -146,16 +149,33 @@
       :redirect-to="redirectTo"
       @success="onWechatSuccess"
     />
+
+    <!-- QQ 登录弹窗 -->
+    <QQLoginModal 
+      v-model="qqModalVisible" 
+      :redirect-to="redirectTo"
+      @success="onQQSuccess"
+    />
+
+    <!-- GitHub 登录弹窗 -->
+    <GithubLoginModal 
+      v-model="githubModalVisible" 
+      :redirect-to="redirectTo"
+      @success="onGithubSuccess"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, computed } from "vue";
+import { reactive, ref, computed, onMounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { request, ApiError } from "@/utils/request";
 import { useUserStore } from "@/stores/user";
 import { Message } from "@arco-design/web-vue";
+import QQLoginModal from "@/components/QQLoginModal.vue";
+import GithubLoginModal from "@/components/GithubLoginModal.vue";
 import WechatLoginModal from "@/components/WechatLoginModal.vue";
+import FlashCaptcha from "@/components/FlashCaptcha.vue";
 import {
   IconApps,
   IconCheckCircleFill,
@@ -172,8 +192,17 @@ const form = reactive({
   password: "",
 });
 const loading = ref(false);
-const rememberMe = ref(true);
+const rememberMe = ref(false);
 const wechatModalVisible = ref(false);
+const qqModalVisible = ref(false);
+const githubModalVisible = ref(false);
+const captchaRef = ref<InstanceType<typeof FlashCaptcha> | null>(null);
+const isCaptchaValid = ref(false);
+
+// 验证码验证回调
+function onCaptchaValid(valid: boolean) {
+  isCaptchaValid.value = valid;
+}
 
 const user = useUserStore();
 const router = useRouter();
@@ -181,9 +210,46 @@ const route = useRoute();
 
 const redirectTo = computed(() => (route.query.redirect as string) || "/");
 
+// 初始化时从路由参数或 localStorage 读取用户名
+onMounted(() => {
+  // 优先从路由参数读取（注册页跳转过来的）
+  const usernameFromRoute = route.query.username as string;
+  const passwordFromRoute = route.query.password as string;
+  
+  if (usernameFromRoute) {
+    form.username = usernameFromRoute;
+    if (passwordFromRoute) {
+      form.password = passwordFromRoute;
+    }
+    console.log("从路由参数读取用户名和密码:", { username: usernameFromRoute, password: passwordFromRoute });
+  } else {
+    // 读取"记住我"的用户名和密码
+    const savedUsername = localStorage.getItem("rememberedUsername");
+    const savedPassword = localStorage.getItem("rememberedPassword");
+    const isRemembered = localStorage.getItem("rememberMe") === "true";
+    
+    console.log("读取记住的信息:", { savedUsername, savedPassword, isRemembered });
+    
+    if (isRemembered && savedUsername) {
+      form.username = savedUsername;
+      if (savedPassword) {
+        form.password = savedPassword;
+      }
+      rememberMe.value = true;
+      console.log("已自动填充用户名和密码");
+    }
+  }
+});
+
 async function handleSubmit() {
   if (!form.username || !form.password) {
     Message.warning("请填写用户名和密码");
+    return;
+  }
+  
+  // 验证验证码
+  if (!captchaRef.value?.validate()) {
+    Message.warning("请输入正确的验证码");
     return;
   }
   
@@ -197,6 +263,20 @@ async function handleSubmit() {
       method: "POST",
       body: JSON.stringify({ username: form.username, password: form.password }),
     });
+    
+    // 处理"记住我"功能
+    if (rememberMe.value) {
+      localStorage.setItem("rememberedUsername", form.username);
+      localStorage.setItem("rememberedPassword", form.password);
+      localStorage.setItem("rememberMe", "true");
+      console.log("已保存用户名和密码:", { username: form.username, password: form.password });
+    } else {
+      localStorage.removeItem("rememberedUsername");
+      localStorage.removeItem("rememberedPassword");
+      localStorage.removeItem("rememberMe");
+      console.log("已清除记住的信息");
+    }
+    
     user.setAuth(res.data.accessToken, res.data.user.name || res.data.user.username);
     Message.success("登录成功！");
     router.replace(redirectTo.value);
@@ -215,8 +295,24 @@ function showWechatLogin() {
   wechatModalVisible.value = true;
 }
 
+function showQQLogin() {
+  qqModalVisible.value = true;
+}
+
+function showGithubLogin() {
+  githubModalVisible.value = true;
+}
+
 function onWechatSuccess(userInfo: any) {
   console.log("WeChat login success:", userInfo);
+}
+
+function onQQSuccess(userInfo: any) {
+  console.log("QQ login success:", userInfo);
+}
+
+function onGithubSuccess(userInfo: any) {
+  console.log("GitHub login success:", userInfo);
 }
 </script>
 
@@ -392,27 +488,6 @@ function onWechatSuccess(userInfo: any) {
   box-shadow: 0 4px 16px rgba(22, 93, 255, 0.35);
 }
 
-.social-login {
-  margin: 16px 0;
-}
-
-.wechat-btn {
-  height: 44px;
-  background: #07c160;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 15px;
-  font-weight: 500;
-  transition: all 0.3s ease;
-}
-
-.wechat-btn:hover {
-  background: #06ad56;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(7, 193, 96, 0.35);
-}
-
 .social-login-icons {
   display: flex;
   justify-content: center;
@@ -421,14 +496,46 @@ function onWechatSuccess(userInfo: any) {
 }
 
 .social-btn {
-  width: 44px;
-  height: 44px;
+  width: 48px;
+  height: 48px;
+  font-size: 24px;
   transition: all 0.3s ease;
+  border: 1px solid var(--color-border-2);
 }
 
 .social-btn:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.wechat-btn {
+  color: #07c160;
+  border-color: #07c160;
+}
+
+.wechat-btn:hover {
+  background: rgba(7, 193, 96, 0.1);
+  border-color: #07c160;
+}
+
+.qq-btn {
+  color: #12b7f5;
+  border-color: #12b7f5;
+}
+
+.qq-btn:hover {
+  background: rgba(18, 183, 245, 0.1);
+  border-color: #12b7f5;
+}
+
+.github-btn {
+  color: #24292e;
+  border-color: #24292e;
+}
+
+.github-btn:hover {
+  background: rgba(36, 41, 46, 0.1);
+  border-color: #24292e;
 }
 
 .footer {

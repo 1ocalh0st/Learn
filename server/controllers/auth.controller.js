@@ -17,6 +17,11 @@ const LoginDTO = z.object({
   password: z.string().min(6).max(72),
 });
 
+const ChangePasswordDTO = z.object({
+  oldPassword: z.string().optional(),
+  newPassword: z.string().min(6).max(72),
+});
+
 const INVALID_CREDENTIALS = {
   code: "INVALID_CREDENTIALS",
   message: "invalid credentials",
@@ -214,9 +219,55 @@ async function me(req, res) {
   }
 
   return res.json({
+    id: user.id,
+    username: user.username,
     name: user.name || user.username || "",
     role: "user",
+    hasPassword: !!user.password_hash,
   });
 }
 
-module.exports = { hello, register, loginJwt, loginLegacy, me };
+async function changePassword(req, res) {
+  const parsed = ChangePasswordDTO.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      code: "VALIDATION_ERROR",
+      message: parsed.error.issues[0]?.message || "invalid params",
+    });
+  }
+
+  const { oldPassword, newPassword } = parsed.data;
+  const userId = req.user?.id;
+
+  try {
+    const user = await authService.getUserById(userId);
+    if (!user) {
+      return res.status(404).json({ code: "USER_NOT_FOUND", message: "用户不存在" });
+    }
+
+    // 如果用户已经有密码，则必须提供并验证旧密码
+    if (user.password_hash) {
+      if (!oldPassword) {
+        return res.status(400).json({ code: "OLD_PASSWORD_REQUIRED", message: "请输入旧密码" });
+      }
+      const isMatch = await bcrypt.compare(oldPassword, user.password_hash);
+      if (!isMatch) {
+        return res.status(401).json({ code: "INVALID_OLD_PASSWORD", message: "旧密码错误" });
+      }
+    }
+
+    // 更新新密码
+    const newPasswordHash = await bcrypt.hash(newPassword, 12);
+    await authService.updateUserPassword(userId, newPasswordHash);
+
+    return res.json({
+      code: "OK",
+      message: "密码设置成功",
+    });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ code: "SERVER_ERROR", message: "服务器错误" });
+  }
+}
+
+module.exports = { hello, register, loginJwt, loginLegacy, me, changePassword };
