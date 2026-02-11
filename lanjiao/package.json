@@ -17,11 +17,18 @@
     "lint": "eslint . --fix --cache",
     "format": "prettier --write --experimental-cli src/"
   },
+  "overrides": {
+    "pptx-preview": "^1.0.7"
+  },
   "dependencies": {
     "@arco-design/web-vue": "^2.57.0",
+    "docx-preview": "^0.3.7",
+    "mammoth": "^1.11.0",
     "pinia": "^3.0.4",
     "vue": "^3.5.26",
-    "vue-router": "^4.6.4"
+    "vue-demi": "^0.14.10",
+    "vue-router": "^4.6.4",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@playwright/test": "^1.57.0",

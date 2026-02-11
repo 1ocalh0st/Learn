@@ -9,6 +9,13 @@ const userRoutes = require("./routes/users");
 const wechatRoutes = require("./routes/wechat");
 const qqRoutes = require("./routes/qq");
 const githubRoutes = require("./routes/github");
+const fileRoutes = require("./routes/files");
+
+// 测试平台相关路由
+const testRoutes = require("./routes/test");
+const reportRoutes = require("./routes/report");
+const monitorRoutes = require("./routes/monitor");
+const aiRoutes = require("./routes/ai");
 
 const app = express();
 
@@ -37,7 +44,15 @@ app.use("/api", qqRoutes);
 app.use("/api", githubRoutes);
 app.use("/api", authRoutes);
 app.use("/api", userRoutes);
+app.use("/api", fileRoutes);
+
+// 测试平台API路由
+app.use("/api/test", testRoutes);
+app.use("/api/reports", reportRoutes);
+app.use("/api/monitor", monitorRoutes);
+app.use("/api/ai", aiRoutes);
 
 app.listen(3000, () => {
   console.log("API server running at http://localhost:3000");
 });
+

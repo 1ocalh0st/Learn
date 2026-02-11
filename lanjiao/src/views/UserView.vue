@@ -478,7 +478,7 @@ onMounted(() => {
 }
 
 .page-header {
-  background: white;
+  background: var(--color-bg-2);
   border-radius: 12px;
   padding: 16px 24px;
   margin-bottom: 0;
@@ -509,7 +509,7 @@ onMounted(() => {
 }
 
 .table-card :deep(.arco-table-th) {
-  background-color: #f7f8fa !important;
+  background-color: var(--color-fill-1) !important;
   font-weight: 600;
 }
 

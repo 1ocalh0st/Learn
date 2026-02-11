@@ -28,6 +28,42 @@ const router = createRouter({
       meta: { requiresAuth: true }
     },
     {
+      path: '/settings',
+      name: 'settings',
+      component: () => import('../views/SettingsView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/files',
+      name: 'files',
+      component: () => import('../views/FileView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/test/projects',
+      name: 'test-projects',
+      component: () => import('../views/TestProjectsView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/test/cases/:id',
+      name: 'test-cases',
+      component: () => import('../views/TestCasesView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/test/reports',
+      name: 'test-reports',
+      component: () => import('../views/ReportsView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
+      path: '/monitor',
+      name: 'monitor',
+      component: () => import('../views/MonitorView.vue'),
+      meta: { requiresAuth: true }
+    },
+    {
       path: "/register",
       component: () => import("@/views/Register.vue")
     },

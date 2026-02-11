@@ -4,7 +4,7 @@
       <div class="header-inner">
         <div class="logo-section">
           <a-typography-title :heading="4" class="logo">
-            <icon-apps /> Learning
+            <icon-apps /> 自动化测试平台
           </a-typography-title>
         </div>
 
@@ -22,9 +22,20 @@
             <template #icon><icon-user-group /></template>
             用户列表
           </a-menu-item>
+          <a-menu-item key="/files">
+            <template #icon><icon-folder /></template>
+            文件管理
+          </a-menu-item>
         </a-menu>
 
         <div class="header-right">
+          <a-button shape="circle" type="secondary" @click="appStore.toggleTheme" class="theme-btn">
+            <template #icon>
+              <icon-sun-fill v-if="appStore.theme === 'dark'" />
+              <icon-moon-fill v-else />
+            </template>
+          </a-button>
+
           <a-dropdown trigger="click">
             <a-button type="text" class="user-btn">
               <a-avatar :size="28" class="user-avatar">
@@ -65,6 +76,7 @@
 import { computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useUserStore } from "@/stores/user";
+import { useAppStore } from "@/stores/app";
 import {
   IconApps,
   IconHome,
@@ -73,12 +85,16 @@ import {
   IconDown,
   IconSettings,
   IconExport,
+  IconSunFill,
+  IconMoonFill,
+  IconFolder,
 } from "@arco-design/web-vue/es/icon";
 import { Message } from "@arco-design/web-vue";
 
 const route = useRoute();
 const router = useRouter();
 const user = useUserStore();
+const appStore = useAppStore();
 
 const currentRoute = computed(() => route.path);
 
@@ -91,7 +107,7 @@ function goProfile() {
 }
 
 function goSettings() {
-  Message.info("设置功能开发中...");
+  router.push("/settings");
 }
 
 function handleLogout() {
@@ -104,19 +120,25 @@ function handleLogout() {
 <style scoped>
 .app-layout {
   min-height: 100vh;
-  background: linear-gradient(135deg, #f7f8fa 0%, #e8edf5 100%);
+  background: var(--color-fill-1);
+  transition: background-color 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+:root[arco-theme='dark'] .app-layout {
+  background: var(--color-bg-1);
 }
 
 .app-header {
-  background: rgba(255, 255, 255, 0.95);
+  background: var(--color-bg-2);
   backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(229, 230, 235, 0.8);
+  border-bottom: 1px solid var(--color-border);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
   position: sticky;
   top: 0;
   z-index: 100;
   padding: 0;
   height: 60px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .header-inner {
@@ -161,18 +183,23 @@ function handleLogout() {
 }
 
 .nav-menu :deep(.arco-menu-item:hover) {
-  background: linear-gradient(135deg, rgba(22, 93, 255, 0.08) 0%, rgba(114, 46, 209, 0.08) 100%);
+  background: var(--color-fill-2);
 }
 
 .nav-menu :deep(.arco-menu-selected) {
-  background: linear-gradient(135deg, rgba(22, 93, 255, 0.1) 0%, rgba(114, 46, 209, 0.1) 100%) !important;
-  color: #165dff;
+  background: var(--color-fill-2) !important;
+  color: var(--color-text-1);
 }
 
 .header-right {
   display: flex;
   align-items: center;
   gap: 16px;
+}
+
+.theme-btn {
+  font-size: 18px;
+  color: var(--color-text-2);
 }
 
 .user-btn {
@@ -182,10 +209,11 @@ function handleLogout() {
   padding: 4px 12px !important;
   border-radius: 20px;
   transition: all 0.3s ease;
+  color: var(--color-text-1);
 }
 
 .user-btn:hover {
-  background: rgba(22, 93, 255, 0.08);
+  background: var(--color-fill-2);
 }
 
 .user-avatar {
@@ -193,7 +221,7 @@ function handleLogout() {
 }
 
 .user-name {
-  color: #1d2129;
+  color: var(--color-text-1);
   font-weight: 500;
   max-width: 100px;
   overflow: hidden;

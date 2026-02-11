@@ -143,6 +143,15 @@
       </div>
     </div>
 
+    <div class="theme-toggle-wrapper">
+      <a-button shape="circle" type="secondary" @click="appStore.toggleTheme" class="theme-btn">
+        <template #icon>
+          <icon-sun-fill v-if="appStore.theme === 'dark'" />
+          <icon-moon-fill v-else />
+        </template>
+      </a-button>
+    </div>
+
     <!-- 微信登录弹窗 -->
     <WechatLoginModal 
       v-model="wechatModalVisible" 
@@ -171,6 +180,7 @@ import { reactive, ref, computed, onMounted } from "vue";
 import { useRouter, useRoute } from "vue-router";
 import { request, ApiError } from "@/utils/request";
 import { useUserStore } from "@/stores/user";
+import { useAppStore } from "@/stores/app";
 import { Message } from "@arco-design/web-vue";
 import QQLoginModal from "@/components/QQLoginModal.vue";
 import GithubLoginModal from "@/components/GithubLoginModal.vue";
@@ -185,6 +195,8 @@ import {
   IconWechat,
   IconQq,
   IconGithub,
+  IconSunFill,
+  IconMoonFill,
 } from "@arco-design/web-vue/es/icon";
 
 const form = reactive({
@@ -205,6 +217,7 @@ function onCaptchaValid(valid: boolean) {
 }
 
 const user = useUserStore();
+const appStore = useAppStore();
 const router = useRouter();
 const route = useRoute();
 
@@ -321,7 +334,7 @@ function onGithubSuccess(userInfo: any) {
   min-height: 100vh;
   display: flex;
   align-items: stretch;
-  background: #f7f8fa;
+  background: var(--color-bg-1);
 }
 
 .login-container {
@@ -435,7 +448,7 @@ function onGithubSuccess(userInfo: any) {
   align-items: center;
   justify-content: center;
   padding: 40px;
-  background: white;
+  background: var(--color-bg-2);
 }
 
 .auth-card {
@@ -450,7 +463,7 @@ function onGithubSuccess(userInfo: any) {
 
 .title {
   margin-bottom: 8px !important;
-  color: #1d2129 !important;
+  color: var(--color-text-1) !important;
 }
 
 .subtitle {
@@ -529,8 +542,8 @@ function onGithubSuccess(userInfo: any) {
 }
 
 .github-btn {
-  color: #24292e;
-  border-color: #24292e;
+  color: var(--color-text-1);
+  border-color: var(--color-text-1);
 }
 
 .github-btn:hover {
@@ -552,5 +565,22 @@ function onGithubSuccess(userInfo: any) {
   .login-form-wrapper {
     padding: 24px;
   }
+}
+
+.theme-toggle-wrapper {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  z-index: 100;
+}
+
+.theme-btn {
+  width: 40px;
+  height: 40px;
+  font-size: 20px;
+  color: var(--color-text-2);
+  background: var(--color-bg-2);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 </style>

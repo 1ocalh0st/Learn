@@ -440,9 +440,9 @@ onUnmounted(() => {
   position: relative;
   border-radius: 8px; /* 统一圆角 8px */
   overflow: hidden;
-  background: #fff;
+  background: var(--color-bg-2);
   box-shadow: none; /* 移除外阴影，更像普通输入框 */
-  border: 1px solid var(--color-border-2); /* 使用标准边框颜色，如果没有变量需要适配 */
+  border: 1px solid var(--color-border); /* 使用标准边框颜色，如果没有变量需要适配 */
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   height: 44px; /* 设置统一高度 */
 }
@@ -495,7 +495,7 @@ onUnmounted(() => {
   letter-spacing: 4px; /* 减小字间距 */
   text-indent: 4px;
   text-align: left; /* 改为左对齐，符合一般输入习惯，或者居中也可以，看风格 */
-  color: #1f2937;
+  color: var(--color-text-1);
   background: transparent;
   border: none;
   outline: none;

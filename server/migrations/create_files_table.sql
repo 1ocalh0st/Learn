@@ -1,0 +1,31 @@
+-- 创建文件表
+CREATE TABLE IF NOT EXISTS files (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  filename VARCHAR(255) NOT NULL COMMENT '原始文件名',
+  stored_name VARCHAR(255) NOT NULL COMMENT '存储文件名(UUID)',
+  file_path VARCHAR(500) NOT NULL COMMENT '文件存储路径',
+  file_size BIGINT NOT NULL DEFAULT 0 COMMENT '文件大小(字节)',
+  mime_type VARCHAR(100) DEFAULT NULL COMMENT '文件MIME类型',
+  folder_id INT DEFAULT NULL COMMENT '所属文件夹ID',
+  is_deleted TINYINT(1) DEFAULT 0 COMMENT '是否已删除(回收站)',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_user_id (user_id),
+  INDEX idx_folder_id (folder_id),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文件表';
+
+-- 创建文件夹表
+CREATE TABLE IF NOT EXISTS folders (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  name VARCHAR(255) NOT NULL COMMENT '文件夹名称',
+  parent_id INT DEFAULT NULL COMMENT '父文件夹ID',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_user_id (user_id),
+  INDEX idx_parent_id (parent_id),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (parent_id) REFERENCES folders(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文件夹表';

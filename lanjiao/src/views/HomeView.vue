@@ -19,35 +19,33 @@
       </div>
     </a-card>
 
-    <!-- 统计卡片 -->
+    <!-- 统计卡片 - 仅保留在线时长 -->
     <a-row :gutter="20" class="stat-row">
-      <a-col :span="8">
+      <a-col :span="24">
         <a-card class="stat-card stat-card-primary" :bordered="false">
-          <a-statistic title="在线时长" :value="2.5" :precision="1">
-            <template #suffix>小时</template>
-            <template #prefix>
-              <icon-clock-circle class="stat-icon" />
-            </template>
-          </a-statistic>
-        </a-card>
-      </a-col>
-      <a-col :span="8">
-        <a-card class="stat-card stat-card-success" :bordered="false">
-          <a-statistic title="完成任务" :value="12">
-            <template #suffix>个</template>
-            <template #prefix>
-              <icon-check-circle class="stat-icon" />
-            </template>
-          </a-statistic>
-        </a-card>
-      </a-col>
-      <a-col :span="8">
-        <a-card class="stat-card stat-card-warning" :bordered="false">
-          <a-statistic title="积分余额" :value="1680">
-            <template #prefix>
-              <icon-fire class="stat-icon" />
-            </template>
-          </a-statistic>
+          <div class="online-time-display">
+            <div class="online-time-icon">
+              <icon-clock-circle />
+            </div>
+            <div class="online-time-info">
+              <div class="online-time-label">本次在线时长</div>
+              <div class="online-time-value">
+                <span class="time-number">{{ formatDuration(onlineSeconds) }}</span>
+              </div>
+              <div class="online-time-detail">
+                登录时间: {{ loginTime }}
+              </div>
+            </div>
+            <div class="online-time-progress">
+              <a-progress 
+                :percent="Math.min((onlineSeconds / 28800) * 100, 100)" 
+                :show-text="false"
+                :stroke-width="8"
+                color="linear-gradient(90deg, #165dff 0%, #722ed1 100%)"
+              />
+              <div class="progress-label">今日目标: 8小时</div>
+            </div>
+          </div>
         </a-card>
       </a-col>
     </a-row>
@@ -127,10 +125,10 @@
         </a-card>
       </a-col>
       <a-col :span="6">
-        <a-card class="action-card" hoverable :bordered="false">
+        <a-card class="action-card" hoverable :bordered="false" @click="navigateTo('/files')">
           <div class="action-content">
             <div class="action-icon action-icon-green">
-              <icon-file />
+              <icon-folder />
             </div>
             <span class="action-title">文件管理</span>
             <span class="action-desc">上传和下载文件</span>
@@ -138,7 +136,7 @@
         </a-card>
       </a-col>
       <a-col :span="6">
-        <a-card class="action-card" hoverable :bordered="false">
+        <a-card class="action-card" hoverable :bordered="false" @click="navigateTo('/settings')">
           <div class="action-content">
             <div class="action-icon action-icon-orange">
               <icon-settings />
@@ -149,44 +147,145 @@
         </a-card>
       </a-col>
       <a-col :span="6">
-        <a-card class="action-card" hoverable :bordered="false">
+        <a-card class="action-card" hoverable :bordered="false" @click="navigateTo('/profile')">
           <div class="action-content">
             <div class="action-icon action-icon-purple">
-              <icon-bar-chart />
+              <icon-idcard />
             </div>
-            <span class="action-title">数据分析</span>
-            <span class="action-desc">查看统计报表</span>
+            <span class="action-title">个人中心</span>
+            <span class="action-desc">管理个人信息</span>
           </div>
         </a-card>
       </a-col>
     </a-row>
+
+    <!-- 测试平台快捷入口 -->
+    <a-card class="platform-section" :bordered="false">
+      <template #title>
+        <div class="section-title">
+          <icon-apps style="margin-right: 8px;" />
+          自动化测试平台
+        </div>
+      </template>
+      
+      <a-row :gutter="20">
+        <a-col :span="6">
+          <a-card class="action-card" hoverable :bordered="false" @click="navigateTo('/test/projects')">
+            <div class="action-content">
+              <div class="action-icon action-icon-cyan">
+                <icon-apps />
+              </div>
+              <span class="action-title">测试项目</span>
+              <span class="action-desc">管理测试项目</span>
+            </div>
+          </a-card>
+        </a-col>
+        <a-col :span="6">
+          <a-card class="action-card" hoverable :bordered="false" @click="navigateTo('/test/reports')">
+            <div class="action-content">
+              <div class="action-icon action-icon-indigo">
+                <icon-file />
+              </div>
+              <span class="action-title">测试报告</span>
+              <span class="action-desc">查看测试结果</span>
+            </div>
+          </a-card>
+        </a-col>
+        <a-col :span="6">
+          <a-card class="action-card" hoverable :bordered="false" @click="navigateTo('/monitor')">
+            <div class="action-content">
+              <div class="action-icon action-icon-red">
+                <icon-exclamation-circle />
+              </div>
+              <span class="action-title">生产监控</span>
+              <span class="action-desc">错误监控告警</span>
+            </div>
+          </a-card>
+        </a-col>
+        <a-col :span="6">
+          <a-card class="action-card" hoverable :bordered="false">
+            <div class="action-content">
+              <div class="action-icon action-icon-gray">
+                <icon-robot />
+              </div>
+              <span class="action-title">AI生成</span>
+              <span class="action-desc">开发中...</span>
+            </div>
+          </a-card>
+        </a-col>
+      </a-row>
+    </a-card>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, onMounted, onUnmounted, computed } from "vue";
 import { useRouter } from "vue-router";
 import { request } from "@/utils/request";
 import { useUserStore } from "@/stores/user";
 import { Message } from "@arco-design/web-vue";
 import {
   IconClockCircle,
-  IconCheckCircle,
-  IconFire,
   IconSend,
   IconUser,
   IconExport,
   IconLock,
   IconRight,
   IconUserGroup,
-  IconFile,
+  IconFolder,
   IconSettings,
-  IconBarChart,
+  IconIdcard,
+  IconApps,
+  IconFile,
+  IconExclamationCircle,
+  IconRobot,
 } from "@arco-design/web-vue/es/icon";
 
 const router = useRouter();
 const user = useUserStore();
 const log = ref("");
+
+// 在线时长相关
+const onlineSeconds = ref(0);
+const loginTimestamp = ref(Date.now());
+let timer: ReturnType<typeof setInterval> | null = null;
+
+const loginTime = computed(() => {
+  return new Date(loginTimestamp.value).toLocaleTimeString('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
+});
+
+function formatDuration(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  
+  if (hours > 0) {
+    return `${hours}小时 ${mins}分 ${secs}秒`;
+  } else if (mins > 0) {
+    return `${mins}分 ${secs}秒`;
+  }
+  return `${secs}秒`;
+}
+
+function startOnlineTimer() {
+  // 从sessionStorage恢复登录时间
+  const savedLoginTime = sessionStorage.getItem('loginTimestamp');
+  if (savedLoginTime) {
+    loginTimestamp.value = parseInt(savedLoginTime);
+    onlineSeconds.value = Math.floor((Date.now() - loginTimestamp.value) / 1000);
+  } else {
+    loginTimestamp.value = Date.now();
+    sessionStorage.setItem('loginTimestamp', String(loginTimestamp.value));
+  }
+  
+  timer = setInterval(() => {
+    onlineSeconds.value = Math.floor((Date.now() - loginTimestamp.value) / 1000);
+  }, 1000);
+}
 
 async function hello() {
   try {
@@ -210,6 +309,7 @@ async function me() {
 }
 
 function handleLogout() {
+  sessionStorage.removeItem('loginTimestamp');
   user.logout();
   Message.success("已成功退出登录");
   router.push("/login");
@@ -218,6 +318,18 @@ function handleLogout() {
 function navigateTo(path: string) {
   router.push(path);
 }
+
+onMounted(() => {
+  if (user.token) {
+    startOnlineTimer();
+  }
+});
+
+onUnmounted(() => {
+  if (timer) {
+    clearInterval(timer);
+  }
+});
 </script>
 
 <style scoped>
@@ -277,29 +389,64 @@ function navigateTo(path: string) {
   background: linear-gradient(135deg, rgba(22, 93, 255, 0.08) 0%, rgba(114, 46, 209, 0.08) 100%);
 }
 
-.stat-card-primary .stat-icon {
-  color: #165dff;
+/* 在线时长显示 */
+.online-time-display {
+  display: flex;
+  align-items: center;
+  gap: 24px;
 }
 
-.stat-card-success {
-  background: linear-gradient(135deg, rgba(0, 180, 42, 0.08) 0%, rgba(34, 199, 94, 0.08) 100%);
+.online-time-icon {
+  width: 64px;
+  height: 64px;
+  background: linear-gradient(135deg, #165dff 0%, #722ed1 100%);
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  color: white;
+  flex-shrink: 0;
 }
 
-.stat-card-success .stat-icon {
-  color: #00b42a;
+.online-time-info {
+  flex: 1;
 }
 
-.stat-card-warning {
-  background: linear-gradient(135deg, rgba(255, 125, 0, 0.08) 0%, rgba(255, 169, 0, 0.08) 100%);
+.online-time-label {
+  font-size: 14px;
+  color: var(--color-text-3);
+  margin-bottom: 4px;
 }
 
-.stat-card-warning .stat-icon {
-  color: #ff7d00;
+.online-time-value {
+  margin-bottom: 4px;
 }
 
-.stat-icon {
-  font-size: 24px;
-  margin-right: 8px;
+.time-number {
+  font-size: 28px;
+  font-weight: 700;
+  background: linear-gradient(135deg, #165dff 0%, #722ed1 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.online-time-detail {
+  font-size: 12px;
+  color: var(--color-text-3);
+}
+
+.online-time-progress {
+  width: 200px;
+  flex-shrink: 0;
+}
+
+.progress-label {
+  font-size: 12px;
+  color: var(--color-text-3);
+  margin-top: 4px;
+  text-align: right;
 }
 
 /* 主面板 */
@@ -421,6 +568,26 @@ function navigateTo(path: string) {
   color: #722ed1;
 }
 
+.action-icon-cyan {
+  background: rgba(20, 184, 166, 0.1);
+  color: #14b8a6;
+}
+
+.action-icon-indigo {
+  background: rgba(79, 70, 229, 0.1);
+  color: #4f46e5;
+}
+
+.action-icon-red {
+  background: rgba(245, 63, 63, 0.1);
+  color: #f53f3f;
+}
+
+.action-icon-gray {
+  background: rgba(134, 142, 150, 0.1);
+  color: #868e96;
+}
+
 .action-title {
   font-size: 15px;
   font-weight: 600;
@@ -443,5 +610,18 @@ function navigateTo(path: string) {
 .fade-leave-to {
   opacity: 0;
   transform: translateY(-10px);
+}
+
+/* 平台Section */
+.platform-section {
+  margin-top: 20px;
+  border-radius: 16px;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  font-size: 16px;
+  font-weight: 600;
 }
 </style>

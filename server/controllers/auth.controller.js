@@ -43,7 +43,7 @@ function signAccessToken(user) {
   return jwt.sign(
     { sub: String(user.id), username: user.username },
     secret,
-    { expiresIn: "0.5h" }
+    { expiresIn: "24h" }
   );
 }
 

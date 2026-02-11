@@ -178,6 +178,15 @@
       </div>
     </div>
 
+    <div class="theme-toggle-wrapper">
+      <a-button shape="circle" type="secondary" @click="appStore.toggleTheme" class="theme-btn">
+        <template #icon>
+          <icon-sun-fill v-if="appStore.theme === 'dark'" />
+          <icon-moon-fill v-else />
+        </template>
+      </a-button>
+    </div>
+
     <!-- 微信登录弹窗 -->
     <WechatLoginModal 
       v-model="wechatModalVisible" 
@@ -205,6 +214,7 @@
 import { reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import { request, ApiError } from "@/utils/request";
+import { useAppStore } from "@/stores/app";
 import { Message } from "@arco-design/web-vue";
 import WechatLoginModal from "@/components/WechatLoginModal.vue";
 import QQLoginModal from "@/components/QQLoginModal.vue";
@@ -218,9 +228,12 @@ import {
   IconWechat,
   IconQq,
   IconGithub,
+  IconSunFill,
+  IconMoonFill,
 } from "@arco-design/web-vue/es/icon";
 
 const router = useRouter();
+const appStore = useAppStore();
 
 const form = reactive({
   username: "",
@@ -311,7 +324,7 @@ function onGithubSuccess(userInfo: any) {
   min-height: 100vh;
   display: flex;
   align-items: stretch;
-  background: #f7f8fa;
+  background: var(--color-bg-1);
 }
 
 .register-container {
@@ -413,7 +426,7 @@ function onGithubSuccess(userInfo: any) {
   align-items: center;
   justify-content: center;
   padding: 40px;
-  background: white;
+  background: var(--color-bg-2);
   overflow-y: auto;
 }
 
@@ -429,7 +442,7 @@ function onGithubSuccess(userInfo: any) {
 
 .title {
   margin-bottom: 8px !important;
-  color: #1d2129 !important;
+  color: var(--color-text-1) !important;
 }
 
 .subtitle {
@@ -532,5 +545,22 @@ function onGithubSuccess(userInfo: any) {
   .register-form-wrapper {
     padding: 24px;
   }
+}
+
+.theme-toggle-wrapper {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  z-index: 100;
+}
+
+.theme-btn {
+  width: 40px;
+  height: 40px;
+  font-size: 20px;
+  color: var(--color-text-2);
+  background: var(--color-bg-2);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 </style>

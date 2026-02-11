@@ -20,7 +20,7 @@ body {
     Cantarell, 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #f5f7fa; /* 设置一个全局底色 */
+  background-color: var(--color-bg-1); /* Use Arco's background variable */
 }
 
 /* 移除链接默认下划线 */
