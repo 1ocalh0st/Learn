@@ -23,8 +23,8 @@ async function createReport(projectId, executionIds, summary) {
     const fileName = `report_${reportId}.html`;
     const filePath = path.join(REPORTS_DIR, fileName);
 
-    // 生成HTML报告 (使用EJS模板 - 将在下一步创建模板)
-    const htmlContent = await generateReportHTML(summary, executionIds);
+    // 生成HTML报告 (使用EJS模板)
+    const htmlContent = await generateReportHTML(summary, executionIds, projectId);
     await fs.writeFile(filePath, htmlContent);
 
     // 保存到数据库
@@ -41,29 +41,50 @@ async function createReport(projectId, executionIds, summary) {
 }
 
 // 获取报告列表
-async function getReports(projectId = null) {
-    let query = "SELECT * FROM test_reports";
+async function getReports(projectId = null, page = 1, pageSize = 10) {
+    let whereClause = "";
     const params = [];
 
     if (projectId) {
-        query += " WHERE project_id = ?";
+        whereClause = " WHERE project_id = ?";
         params.push(projectId);
     }
 
-    query += " ORDER BY created_at DESC";
+    // 获取总数
+    const [countResult] = await pool.query("SELECT COUNT(*) as total FROM test_reports" + whereClause, params);
+    const total = countResult[0].total;
 
-    const [reports] = await pool.query(query, params);
-    return reports.map(r => ({
-        ...r,
-        execution_ids: typeof r.execution_ids === 'string' ? JSON.parse(r.execution_ids) : r.execution_ids,
-        summary: typeof r.summary === 'string' ? JSON.parse(r.summary) : r.summary
-    }));
+    // 获取分页数据
+    let query = `
+        SELECT r.*, p.name as project_name 
+        FROM test_reports r 
+        LEFT JOIN test_projects p ON r.project_id = p.id
+        ${whereClause} 
+        ORDER BY r.created_at DESC 
+        LIMIT ? OFFSET ?
+    `;
+    const offset = (page - 1) * pageSize;
+    const [reports] = await pool.query(query, [...params, pageSize, offset]);
+
+    return {
+        items: reports.map(r => ({
+            ...r,
+            execution_ids: typeof r.execution_ids === 'string' ? JSON.parse(r.execution_ids) : r.execution_ids,
+            summary: typeof r.summary === 'string' ? JSON.parse(r.summary) : r.summary
+        })),
+        total,
+        page,
+        pageSize
+    };
 }
 
 // 获取报告详情
 async function getReportById(id) {
     const [reports] = await pool.query(
-        "SELECT * FROM test_reports WHERE id = ?",
+        `SELECT r.*, p.name as project_name 
+         FROM test_reports r 
+         LEFT JOIN test_projects p ON r.project_id = p.id 
+         WHERE r.id = ?`,
         [id]
     );
 
@@ -77,9 +98,35 @@ async function getReportById(id) {
     };
 }
 
+// 删除报告
+async function deleteReport(id) {
+    const report = await getReportById(id);
+    if (!report) return false;
+
+    // 删除数据库记录
+    await pool.query("DELETE FROM test_reports WHERE id = ?", [id]);
+
+    // 删除文件
+    if (report.file_path) {
+        try {
+            await fs.unlink(report.file_path);
+        } catch (e) {
+            console.warn(`Failed to delete report file: ${report.file_path}`, e);
+        }
+    }
+
+    return true;
+}
+
 // 生成HTML报告内容
-async function generateReportHTML(summary, executionIds) {
+async function generateReportHTML(summary, executionIds, projectId = null) {
     const testService = require("./test.service");
+
+    let projectName = "未知项目";
+    if (projectId) {
+        const project = await testService.getProjectById(projectId);
+        if (project) projectName = project.name;
+    }
 
     // 获取每个执行记录的完整数据（含截图）
     const executions = [];
@@ -93,12 +140,71 @@ async function generateReportHTML(summary, executionIds) {
         } catch { /* skip */ }
     }
 
+    // Load screenshot helper
+    const loadScreenshot = async (pathOrBase64) => {
+        if (!pathOrBase64) return '';
+        // If it's already base64 (older records), return as is
+        if (pathOrBase64.startsWith('data:image') || pathOrBase64.length > 200) { // Simple heuristic
+            return pathOrBase64.replace(/^data:image\/\w+;base64,/, "");
+        }
+
+        // It's a file path
+        try {
+            // Assuming images are in ../public/screenshots
+            const imagePath = path.join(__dirname, "../public/screenshots", pathOrBase64);
+            const imageBuffer = await fs.readFile(imagePath);
+            return imageBuffer.toString('base64');
+        } catch (e) {
+            console.warn(`Failed to load screenshot: ${pathOrBase64}`, e);
+            return '';
+        }
+    };
+
+    // Pre-process screenshots for all executions to avoid async in EJS
+    for (const exec of executions) {
+        if (exec.result) {
+            if (exec.result.screenshotPath) {
+                exec.result.screenshot = await loadScreenshot(exec.result.screenshotPath);
+            } else if (exec.result.screenshot) {
+                // It's base64, remove header if needed for consistency with helper logic
+                exec.result.screenshot = exec.result.screenshot.replace(/^data:image\/\w+;base64,/, "");
+            }
+
+            if (exec.result.steps) {
+                for (const s of exec.result.steps) {
+                    if (s.detail) {
+                        if (s.detail.screenshotPath) {
+                            s.detail.screenshot = await loadScreenshot(s.detail.screenshotPath);
+                        } else if (s.detail.screenshot) {
+                            s.detail.screenshot = s.detail.screenshot.replace(/^data:image\/\w+;base64,/, "");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    const stripAnsi = (text) => (text || '').replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '');
+    for (const exec of executions) {
+        if (exec.error_message) exec.error_message = stripAnsi(exec.error_message);
+        if (exec.result) {
+            if (exec.result.steps) {
+                exec.result.steps.forEach(s => { if (s.message) s.message = stripAnsi(s.message); });
+            }
+            if (exec.result.assertions) {
+                exec.result.assertions.forEach(a => { if (a.message) a.message = stripAnsi(a.message); });
+            }
+        }
+    }
+
     // SVG Icons
     const icons = {
-        pass: '<svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" width="16" height="16"><path fill-rule="evenodd" clip-rule="evenodd" d="M24 44C35.0457 44 44 35.0457 44 24C44 12.9543 35.0457 4 24 4C12.9543 4 4 12.9543 4 24C4 35.0457 12.9543 44 24 44ZM32.5429 20.3015L21.4985 31.8797L15.4571 25.5453C14.8878 24.9484 14.8878 23.9806 15.4571 23.3838C16.0264 22.7869 16.9493 22.7869 17.5186 23.3838L21.986 28.0673L31.42 17.6534L31.5583 17.525C32.1265 17.062 33.0487 17.1594 33.5137 17.8105C33.9113 18.3672 33.8829 19.1088 33.4893 19.646L32.5429 20.3015Z" fill="#00b42a"/></svg>',
-        fail: '<svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" width="16" height="16"><path fill-rule="evenodd" clip-rule="evenodd" d="M24 44C35.0457 44 44 35.0457 44 24C44 12.9543 35.0457 4 24 4C12.9543 4 4 12.9543 4 24C4 35.0457 12.9543 44 24 44ZM15.3976 17.5186C14.8118 16.9328 14.8118 15.9831 15.3976 15.3973C15.9834 14.8115 16.9331 14.8115 17.5189 15.3973L24.0003 21.8787L30.4817 15.3973C31.0675 14.8115 32.0172 14.8115 32.603 15.3973C33.1887 15.9831 33.1887 16.9328 32.603 17.5186L26.1216 24L32.603 30.4814C33.1887 31.0672 33.1887 32.0169 32.603 32.6027C32.0172 33.1885 31.0675 33.1885 30.4817 32.6027L24.0003 26.1213L17.5189 32.6027C16.9331 33.1885 15.9834 33.1885 15.3976 32.6027C14.8118 32.0169 14.8118 31.0672 15.3976 30.4814L21.879 24L15.3976 17.5186Z" fill="#f53f3f"/></svg>',
-        chart: '<svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" width="24" height="24" stroke="currentColor" stroke-width="4"><path d="M6 6V42H42" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 30L22 22L30 30L42 14" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-        camera: '<svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" width="20" height="20" stroke="currentColor" stroke-width="4"><path d="M15 12L18 6H30L33 12H42C43.1046 12 44 12.8954 44 14V40C44 41.1046 43.1046 42 42 42H6C4.89543 42 4 41.1046 4 40V14C4 12.8954 4.89543 12 6 12H15Z" stroke-linejoin="round"/><circle cx="24" cy="28" r="8"/></svg>'
+        pass: '<svg class="w-5 h-5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>',
+        fail: '<svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>',
+        chart: '<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>',
+        camera: '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>',
+        chevron: '<svg class="w-4 h-4 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>',
+        time: '<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>'
     };
 
     const template = `
@@ -107,177 +213,378 @@ async function generateReportHTML(summary, executionIds) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>测试报告 - <%= new Date().toLocaleString() %></title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f2f5; padding: 20px; min-height: 100vh; color: #1d2129; }
-        .container { max-width: 1200px; margin: 0 auto; background: white; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow: hidden; }
-        .header { background: white; border-bottom: 1px solid #e5e6eb; padding: 24px 30px; display: flex; align-items: center; justify-content: space-between; }
-        .header-left { display: flex; align-items: center; gap: 12px; }
-        h1 { font-size: 20px; margin: 0; font-weight: 500; display: flex; align-items: center; gap: 8px; }
-        .timestamp { color: #86909c; font-size: 14px; }
-        .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: #e5e6eb; padding: 1px 0; margin-bottom: 20px; }
-        .stat-card { background: white; padding: 24px; text-align: center; }
-        .stat-value { font-size: 32px; font-weight: bold; margin: 8px 0; line-height: 1.2; }
-        .stat-label { color: #86909c; font-size: 14px; }
-        .passed .stat-value { color: #00b42a; }
-        .failed .stat-value { color: #f53f3f; }
-        .total .stat-value { color: #165dff; }
-        .pass-rate .stat-value { color: #0fc6c2; }
-        .content { padding: 0 30px 30px; }
-        .exec-card { border: 1px solid #e5e6eb; border-radius: 4px; margin-bottom: 16px; overflow: hidden; }
-        .exec-header { padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; background: #f7f8fa; font-weight: 500; }
-        .exec-header.pass { border-left: 4px solid #00b42a; }
-        .exec-header.fail { border-left: 4px solid #f53f3f; }
-        .exec-body { padding: 16px; }
-        .step-item { padding: 8px 12px; margin: 4px 0; border-radius: 2px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
-        .step-item.pass { background: #e8ffea; color: #00b42a; }
-        .step-item.fail { background: #ffece8; color: #f53f3f; }
-        .step-icon { display: flex; align-items: center; width: 16px; height: 16px; flex-shrink: 0; }
-        .step-msg { flex: 1; color: #1d2129; }
-        .step-action { font-weight: bold; margin-right: 8px; }
-        .screenshot-section { margin-top: 16px; border-top: 1px solid #f2f3f5; padding-top: 12px; }
-        .screenshot-section h3 { font-size: 16px; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
-        .screenshot-img { max-width: 100%; border: 1px solid #e5e6eb; border-radius: 4px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
-        .tag { padding: 2px 8px; border-radius: 2px; font-size: 12px; line-height: 20px; }
-        .tag.pass { background: #e8ffea; color: #00b42a; }
-        .tag.fail { background: #ffece8; color: #f53f3f; }
-        .tag.type { background: #f2f3f5; color: #4e5969; margin-left: 8px; }
-        .perf-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 12px 0; }
-        .perf-item { background: #f7f8fa; padding: 12px; border-radius: 4px; text-align: center; }
-        .perf-item .label { font-size: 12px; color: #86909c; margin-bottom: 4px; }
-        .perf-item .value { font-size: 16px; font-weight: 600; }
-        .error-box { background: #fff7f7; border: 1px solid #fcc; color: #f53f3f; padding: 12px; border-radius: 4px; margin-bottom: 12px; }
-        
-        /* Image Preview Overlay */
-        #image-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.85); display: none; align-items: center; justify-content: center;
-            z-index: 1000; cursor: zoom-out;
-        }
-        #image-overlay img { max-width: 90%; max-height: 90%; box-shadow: 0 0 20px rgba(0,0,0,0.5); border-radius: 4px; }
-        .clickable-img { cursor: zoom-in; transition: opacity 0.2s; }
-        .clickable-img:hover { opacity: 0.9; }
-    </style>
-</head>
-<body>
-    <div id="image-overlay" onclick="this.style.display='none'">
-        <img id="overlay-img" src="" alt="Preview">
-    </div>
+    <title><%= projectName %> - 自动化测试报告</title>
+    <script src="https://cdn.tailwindcss.com"></script>
     <script>
-        function showImage(src) {
-            const overlay = document.getElementById('image-overlay');
-            const img = document.getElementById('overlay-img');
-            img.src = src;
-            overlay.style.display = 'flex';
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#3b82f6',
+                        success: '#10b981',
+                        danger: '#ef4444',
+                        warning: '#f59e0b',
+                        gray: {
+                            50: '#f9fafb',
+                            100: '#f3f4f6',
+                            200: '#e5e7eb',
+                            300: '#d1d5db',
+                            400: '#9ca3af',
+                            500: '#6b7280',
+                            600: '#4b5563',
+                            700: '#374151',
+                            800: '#1f2937',
+                            900: '#111827',
+                        }
+                    }
+                }
+            }
         }
     </script>
-    <div class="container">
-        <div class="header">
-            <div class="header-left">
-                <h1><%- icons.chart %> 自动化测试报告</h1>
-            </div>
-            <div class="timestamp">生成时间: <%= new Date().toLocaleString('zh-CN') %></div>
-        </div>
+    <style>
+        body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background-color: #f3f4f6; }
+        .clip-path-slant { clip-path: polygon(0 0, 100% 0, 95% 100%, 0% 100%); }
+        .glass-header { 
+            background: rgba(255, 255, 255, 0.95); 
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid rgba(229, 231, 235, 0.5);
+        }
+        .summary-card {
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .summary-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        .step-row { transition: background-color 0.15s; }
+        .step-row:hover { background-color: #f9fafb; }
+        
+        .collapsed .exec-body { display: none; }
+        .collapsed .chevron-icon { transform: rotate(-90deg); }
+        .chevron-icon { transition: transform 0.2s; }
+        
+        .expanded-text { white-space: pre-wrap; }
+        .truncate-text { 
+           display: -webkit-box;
+           -webkit-line-clamp: 2;
+           -webkit-box-orient: vertical;
+           overflow: hidden;
+        }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
+        
+        /* Modal Animation - Improved with simple CSS transitions */
+        .modal-enter { opacity: 0; }
+        .modal-enter-active { opacity: 1; transition: opacity 0.2s; }
+        .modal-exit { opacity: 1; }
+        .modal-exit-active { opacity: 0; transition: opacity 0.2s; }
+        
+        .scale-enter { transform: scale(0.95); opacity: 0; }
+        .scale-enter-active { transform: scale(1); opacity: 1; transition: all 0.2s; }
+    </style>
+</head>
+<body class="text-gray-800 antialiased min-h-screen pb-12">
 
-        <div class="summary">
-            <div class="stat-card">
-                <div class="stat-value total"><%= summary.total || 0 %></div>
-                <div class="stat-label">总用例数</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value passed"><%= summary.passed || 0 %></div>
-                <div class="stat-label">通过</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value failed"><%= summary.failed || 0 %></div>
-                <div class="stat-label">失败</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value pass-rate"><%= summary.passRate || '0%' %></div>
-                <div class="stat-label">通过率</div>
-            </div>
+    <!-- Image Preview Modal -->
+    <div id="image-modal" class="fixed inset-0 z-50 hidden" style="background-color: rgba(0,0,0,0.9);" onclick="closeImage()">
+        <button class="absolute top-4 right-4 text-white hover:text-gray-300 focus:outline-none">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+        <div class="flex items-center justify-center h-full p-4">
+            <img id="modal-img" src="" class="max-w-full max-h-full rounded shadow-2xl transform transition-all duration-300" onclick="event.stopPropagation()">
         </div>
+    </div>
 
-        <div class="content">
-            <% executions.forEach(function(exec, idx) { %>
-            <div class="exec-card">
-                <div class="exec-header <%= exec.status === 'passed' ? 'pass' : 'fail' %>">
-                    <span>
-                        #<%= idx + 1 %> <%= exec.testCase ? exec.testCase.name : '用例#' + exec.test_case_id %>
-                        <span class="tag type"><%= exec.testCase ? exec.testCase.type.toUpperCase() : '' %></span>
-                    </span>
-                    <span>
-                        <span class="tag <%= exec.status === 'passed' ? 'pass' : 'fail' %>">
-                            <%= exec.status === 'passed' ? 'PASS' : 'FAIL' %>
-                        </span>
-                        <% if (exec.duration) { %> <span style="color:#86909c;margin-left:8px"><%= exec.duration %>ms</span><% } %>
-                    </span>
+    <!-- Header -->
+    <header class="glass-header sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="p-2 bg-blue-100 text-blue-600 rounded-lg">
+                    <%- icons.chart %>
                 </div>
-                <div class="exec-body">
-                    <% if (exec.error_message) { %>
-                    <div class="error-box"><%- icons.fail %> <%= exec.error_message %></div>
-                    <% } %>
+                <div>
+                    <h1 class="text-xl font-bold bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent"><%= projectName %></h1>
+                    <p class="text-xs text-gray-500 font-medium">自动化测试报告 · Test Automation Report</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-4 text-sm text-gray-500">
+                <div class="flex items-center gap-1.5 px-3 py-1 bg-gray-100 rounded-full">
+                    <%- icons.time %>
+                    <span><%= new Date().toLocaleString('zh-CN') %></span>
+                </div>
+            </div>
+        </div>
+    </header>
 
-                    <% var result = exec.result || {}; %>
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        
+        <!-- Summary Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <div class="summary-card bg-white rounded-xl shadow-sm border border-gray-100 p-6 relative overflow-hidden group">
+                <div class="absolute right-0 top-0 h-full w-1 bg-blue-500"></div>
+                <div class="relative z-10">
+                    <p class="text-sm font-medium text-gray-500 mb-1">总用例数 (Total)</p>
+                    <p class="text-4xl font-bold text-gray-800 group-hover:scale-105 transition-transform origin-left"><%= summary.total || 0 %></p>
+                </div>
+                <div class="absolute -right-6 -bottom-6 w-24 h-24 bg-blue-50 rounded-full opacity-50 group-hover:scale-125 transition-transform duration-500"></div>
+            </div>
+            
+            <div class="summary-card bg-white rounded-xl shadow-sm border border-gray-100 p-6 relative overflow-hidden group">
+                <div class="absolute right-0 top-0 h-full w-1 bg-green-500"></div>
+                <div class="relative z-10">
+                    <p class="text-sm font-medium text-gray-500 mb-1">通过 (Passed)</p>
+                    <div class="flex items-baseline gap-2">
+                        <p class="text-4xl font-bold text-green-600 group-hover:scale-105 transition-transform origin-left"><%= summary.passed || 0 %></p>
+                    </div>
+                </div>
+                 <div class="absolute -right-6 -bottom-6 w-24 h-24 bg-green-50 rounded-full opacity-50 group-hover:scale-125 transition-transform duration-500"></div>
+            </div>
 
-                    <% if (result.steps) { %>
-                    <% result.steps.forEach(function(s, si) { %>
-                    <div class="step-item <%= s.success ? 'pass' : 'fail' %>">
-                        <span class="step-icon"><%- s.success ? icons.pass : icons.fail %></span>
-                        <div class="step-msg">
-                            <span class="step-action"><%= s.action %></span>
-                            <%= (s.message || '').replace(/^\[(PASS|FAIL)\] /, '') %>
+            <div class="summary-card bg-white rounded-xl shadow-sm border border-gray-100 p-6 relative overflow-hidden group">
+                <div class="absolute right-0 top-0 h-full w-1 bg-red-500"></div>
+                <div class="relative z-10">
+                    <p class="text-sm font-medium text-gray-500 mb-1">失败 (Failed)</p>
+                    <p class="text-4xl font-bold text-red-600 group-hover:scale-105 transition-transform origin-left"><%= summary.failed || 0 %></p>
+                </div>
+                 <div class="absolute -right-6 -bottom-6 w-24 h-24 bg-red-50 rounded-full opacity-50 group-hover:scale-125 transition-transform duration-500"></div>
+            </div>
+
+            <div class="summary-card bg-white rounded-xl shadow-sm border border-gray-100 p-6 relative overflow-hidden group">
+                <div class="absolute right-0 top-0 h-full w-1 bg-cyan-500"></div>
+                <div class="relative z-10">
+                    <p class="text-sm font-medium text-gray-500 mb-1">通过率 (Pass Rate)</p>
+                    <p class="text-4xl font-bold text-cyan-600 group-hover:scale-105 transition-transform origin-left"><%= summary.passRate || '0%' %></p>
+                </div>
+                 <div class="absolute -right-6 -bottom-6 w-24 h-24 bg-cyan-50 rounded-full opacity-50 group-hover:scale-125 transition-transform duration-500"></div>
+            </div>
+        </div>
+
+        <!-- Filters & Toolbar (Placeholder for future interactivity) -->
+        <div class="flex items-center justify-between mb-6">
+            <h2 class="text-xl font-bold text-gray-800">详细执行结果</h2>
+            <div class="flex gap-2">
+                <button onclick="expandAll()" class="px-3 py-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500">展开所有</button>
+                <button onclick="collapseAll()" class="px-3 py-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500">收起所有</button>
+            </div>
+        </div>
+
+        <!-- Execution List -->
+        <div class="space-y-4">
+            <% executions.forEach(function(exec, idx) { %>
+            <div class="exec-card bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden transition-all duration-300 hover:shadow-md <%= exec.status === 'passed' ? 'collapsed' : '' %>" id="exec-<%= idx %>">
+                <!-- Card Header -->
+                <div class="exec-header px-6 py-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 transition-colors" onclick="toggleCard(this)">
+                    <div class="flex items-center gap-4 flex-1">
+                        <div class="chevron-icon text-gray-400 p-1 rounded hover:bg-gray-200 transition-colors">
+                            <%- icons.chevron %>
                         </div>
-                        <% if (s.duration) { %><span style="font-size:12px;opacity:0.6"><%= s.duration %>ms</span><% } %>
+                        <div class="flex flex-col">
+                            <div class="flex items-center gap-3">
+                                <span class="text-sm font-bold text-gray-400">#<%= idx + 1 %></span>
+                                <h3 class="text-base font-semibold text-gray-800"><%= exec.testCase ? exec.testCase.name : '用例#' + exec.test_case_id %></h3>
+                                <span class="px-2 py-0.5 text-xs font-medium uppercase tracking-wider rounded bg-gray-100 text-gray-600 border border-gray-200">
+                                    <%= exec.testCase ? exec.testCase.type : 'UNKNOWN' %>
+                                </span>
+                            </div>
+                            <div class="text-xs text-gray-400 mt-1 flex items-center gap-2">
+                                <span>ID: <%= exec.id %></span>
+                                <span>•</span>
+                                <span>Duration: <%= exec.duration %>ms</span>
+                            </div>
+                        </div>
                     </div>
-                    <% if (s.detail && s.detail.screenshot) { %>
-                    <div style="margin-top:8px;margin-left:24px;">
-                        <img src="data:image/png;base64,<%= s.detail.screenshot %>" 
-                             class="clickable-img"
-                             onclick="showImage(this.src)"
-                             style="max-height:200px;border:1px solid #eee;border-radius:4px;" />
-                    </div>
-                    <% } %>
-                    <% }); %>
-                    <% } %>
-
-                    <% if (result.assertions) { %>
-                    <% result.assertions.forEach(function(a) { %>
-                    <div class="step-item <%= a.passed ? 'pass' : 'fail' %>">
-                        <span class="step-icon"><%- a.passed ? icons.pass : icons.fail %></span>
-                        <div class="step-msg"><%= (a.message || '').replace(/^\[(PASS|FAIL)\] /, '') %></div>
-                    </div>
-                    <% }); %>
-                    <% } %>
-
-                    <% if (result.screenshot) { %>
-                    <div class="screenshot-section">
-                        <h3><%- icons.camera %> 页面截图</h3>
-                        <img src="data:image/png;base64,<%= result.screenshot %>" 
-                             class="screenshot-img clickable-img" 
-                             onclick="showImage(this.src)" />
-                    </div>
-                    <% } %>
                     
-                    <% if (result.metrics) { /* Load test metrics simplified */ %>
-                        <div style="margin-top:10px;font-size:14px;white-space:pre-wrap;font-family:monospace;background:#f8f9fa;padding:10px;"><%= result.summary || '' %></div>
-                    <% } %>
+                    <div class="flex items-center gap-4">
+                        <% if (exec.status === 'passed') { %>
+                            <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium bg-green-50 text-green-700 border border-green-100">
+                                <div class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                                PASS
+                            </span>
+                        <% } else { %>
+                            <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-medium bg-red-50 text-red-700 border border-red-100">
+                                <div class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
+                                FAIL
+                            </span>
+                        <% } %>
+                    </div>
+                </div>
+
+                <!-- Card Body -->
+                <div class="exec-body border-t border-gray-100">
+                    <div class="p-6">
+                        <% if (exec.error_message) { %>
+                        <div class="mb-6 bg-red-50 border border-red-200 rounded-lg p-4 flex gap-3 text-red-800 items-start">
+                            <div class="mt-0.5 shrink-0"><%- icons.fail %></div>
+                            <div class="text-sm font-mono break-all whitespace-pre-wrap"><%= exec.error_message %></div>
+                        </div>
+                        <% } %>
+
+                        <% var result = exec.result || {}; %>
+
+                        <!-- Steps -->
+                        <% if (result.steps && result.steps.length > 0) { %>
+                        <div class="space-y-1 rounded-lg border border-gray-200 overflow-hidden">
+                            <div class="bg-gray-50 px-4 py-2 border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center">
+                                <span class="w-8">Stat</span>
+                                <span class="w-24">Action</span>
+                                <span class="flex-1">Details</span>
+                                <span class="w-20 text-right">Time</span>
+                            </div>
+                            
+                            <% result.steps.forEach(function(s, si) { %>
+                            <div class="step-row px-4 py-3 border-b border-gray-100 last:border-0 flex items-start text-sm group">
+                                <div class="w-8 pt-0.5 shrink-0">
+                                    <% if (s.success) { %>
+                                        <div class="text-green-500"><%- icons.pass %></div>
+                                    <% } else { %>
+                                        <div class="text-red-500"><%- icons.fail %></div>
+                                    <% } %>
+                                </div>
+                                <div class="w-24 pt-0.5 font-medium text-gray-700 shrink-0"><%= s.action %></div>
+                                <div class="flex-1 min-w-0 pr-4">
+                                    <div class="text-gray-600 leading-relaxed step-content truncate-text relative">
+                                        <%= (s.message || '').replace(/^\[(PASS|FAIL)\] /, '') %>
+                                    </div>
+                                    <% if ((s.message || '').length > 150) { %>
+                                        <button class="text-xs text-blue-500 hover:text-blue-700 mt-1 font-medium focus:outline-none" onclick="toggleText(this)">显示更多</button>
+                                    <% } %>
+                                    
+                                    <% if (s.detail && s.detail.screenshot) { %>
+                                    <div class="mt-3 inline-block relative group/img cursor-zoom-in" onclick="showImage('data:image/png;base64,<%= s.detail.screenshot %>')">
+                                        <div class="absolute inset-0 bg-black bg-opacity-0 group-hover/img:bg-opacity-10 transition-all rounded"></div>
+                                        <img src="data:image/png;base64,<%= s.detail.screenshot %>" class="h-24 rounded border border-gray-200 object-cover bg-gray-50 shadow-sm" loading="lazy" />
+                                        <div class="absolute bottom-1 right-1 bg-black bg-opacity-60 text-white text-[10px] px-1 rounded opacity-0 group-hover/img:opacity-100 transition-opacity">Preview</div>
+                                    </div>
+                                    <% } %>
+                                </div>
+                                <div class="w-20 text-right pt-0.5 text-xs text-gray-400 font-mono shrink-0"><%= s.duration ? s.duration + 'ms' : '-' %></div>
+                            </div>
+                            <% }); %>
+                        </div>
+                        <% } %>
+
+                        <!-- Assertions (HTTP Mode) -->
+                        <% if (result.assertions && result.assertions.length > 0) { %>
+                        <div class="mt-6 space-y-1 rounded-lg border border-gray-200 overflow-hidden">
+                            <div class="bg-gray-50 px-4 py-2 border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                                断言结果 (Assertions)
+                            </div>
+                            <% result.assertions.forEach(function(a) { %>
+                            <div class="step-row px-4 py-3 border-b border-gray-100 last:border-0 flex items-start text-sm">
+                                <div class="w-8 pt-0.5 shrink-0">
+                                    <% if (a.passed) { %>
+                                        <div class="text-green-500"><%- icons.pass %></div>
+                                    <% } else { %>
+                                        <div class="text-red-500"><%- icons.fail %></div>
+                                    <% } %>
+                                </div>
+                                <div class="flex-1 min-w-0">
+                                    <div class="text-gray-700"><%= (a.message || '').replace(/^\[(PASS|FAIL)\] /, '') %></div>
+                                </div>
+                            </div>
+                            <% }); %>
+                        </div>
+                        <% } %>
+
+                        <!-- Final Screenshot -->
+                        <% if (result.screenshot) { %>
+                        <div class="mt-6">
+                            <h4 class="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                                <%- icons.camera %>
+                                最终状态截图
+                            </h4>
+                            <div class="relative inline-block group cursor-zoom-in overflow-hidden rounded-lg border border-gray-200 bg-gray-50 shadow-sm" onclick="showImage('data:image/png;base64,<%= result.screenshot %>')">
+                                <img src="data:image/png;base64,<%= result.screenshot %>" class="max-w-md max-h-96 object-contain block transition-transform duration-500 group-hover:scale-105" />
+                                <div class="absolute inset-0 bg-black opacity-0 group-hover:opacity-10 transition-opacity"></div>
+                                <div class="absolute bottom-2 right-2 bg-black bg-opacity-70 text-white text-xs px-2 py-1 rounded pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">Click to Expand</div>
+                            </div>
+                        </div>
+                        <% } %>
+
+                        <!-- Load Test Metrics -->
+                        <% if (result.metrics) { %>
+                        <div class="mt-6">
+                            <h4 class="text-sm font-semibold text-gray-700 mb-3">性能指标</h4>
+                            <div class="bg-gray-900 text-gray-200 p-4 rounded-lg font-mono text-sm overflow-x-auto shadow-inner">
+                                <pre><%= result.summary || '' %></pre>
+                            </div>
+                        </div>
+                        <% } %>
+                    </div>
                 </div>
             </div>
             <% }); %>
         </div>
-    </div>
+    </main>
+
+    <script>
+        function toggleCard(header) {
+            const card = header.closest('.exec-card');
+            card.classList.toggle('collapsed');
+        }
+
+        function expandAll() {
+            document.querySelectorAll('.exec-card').forEach(card => card.classList.remove('collapsed'));
+        }
+
+        function collapseAll() {
+            document.querySelectorAll('.exec-card').forEach(card => card.classList.add('collapsed'));
+        }
+
+        function toggleText(btn) {
+            const content = btn.previousElementSibling;
+            if (content.classList.contains('truncate-text')) {
+                content.classList.remove('truncate-text');
+                btn.innerText = '收起内容';
+            } else {
+                content.classList.add('truncate-text');
+                btn.innerText = '显示更多';
+            }
+        }
+
+        function showImage(src) {
+            const modal = document.getElementById('image-modal');
+            const img = document.getElementById('modal-img');
+            img.src = src;
+            modal.classList.remove('hidden');
+            document.body.style.overflow = 'hidden';
+            
+            // Re-apply scale animation correctly by ensuring it is fresh
+            img.style.transform = 'scale(0.95)';
+            img.style.opacity = '0';
+            setTimeout(() => {
+                img.style.transform = 'scale(1)';
+                img.style.opacity = '1';
+                img.style.transition = 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)';
+            }, 10);
+        }
+
+        function closeImage() {
+            const modal = document.getElementById('image-modal');
+            modal.classList.add('hidden');
+            document.body.style.overflow = 'auto';
+        }
+        
+        // Handle ESC key for modal
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeImage();
+        });
+    </script>
 </body>
 </html>
     `;
 
-    return ejs.render(template, { summary, executionIds, executions, icons });
+    return ejs.render(template, { summary, executionIds, executions, icons, projectName });
 }
 
 module.exports = {
     createReport,
     getReports,
     getReportById,
+    deleteReport,
     REPORTS_DIR
 };

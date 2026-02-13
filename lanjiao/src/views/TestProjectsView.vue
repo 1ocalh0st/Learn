@@ -12,7 +12,7 @@
 
     <!-- 项目列表 -->
     <a-row :gutter="20" class="projects-grid">
-      <a-col v-for="project in projects" :key="project.id" :span="8">
+      <a-col v-for="project in filteredProjects" :key="project.id" :span="8">
         <a-card
           class="project-card"
           hoverable
@@ -22,7 +22,7 @@
             <div class="project-icon">
               <icon-apps />
             </div>
-            <a-dropdown @select="handleAction($event, project)">
+            <a-dropdown @select="handleAction($event, project)" @click.stop>
               <a-button type="text" size="small">
                 <icon-more />
               </a-button>
@@ -54,8 +54,8 @@
       </a-col>
 
       <!-- 空状态 -->
-      <a-col v-if="projects.length === 0" :span="24">
-        <a-empty description="暂无项目">
+      <a-col v-if="filteredProjects.length === 0" :span="24">
+        <a-empty :description="searchQuery ? '未找到相关项目' : '暂无项目'">
           <a-button type="primary" @click="showCreateModal = true">
             创建第一个项目
           </a-button>
@@ -94,8 +94,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
-import { useRouter } from 'vue-router';
+import { ref, onMounted, computed, watch } from 'vue';
+import { useRouter, useRoute } from 'vue-router';
 import { Message, Modal } from '@arco-design/web-vue';
 import { request } from '@/utils/request';
 import {
@@ -115,6 +115,7 @@ interface Project {
 }
 
 const router = useRouter();
+const route = useRoute();
 const projects = ref<Project[]>([]);
 const showCreateModal = ref(false);
 const editingProject = ref<Project | null>(null);
@@ -122,6 +123,24 @@ const formData = ref({
   name: '',
   description: '',
 });
+const searchQuery = ref('');
+
+const filteredProjects = computed(() => {
+  if (!searchQuery.value) return projects.value;
+  const q = searchQuery.value.toLowerCase();
+  return projects.value.filter(p => 
+    p.name.toLowerCase().includes(q) || 
+    (p.description && p.description.toLowerCase().includes(q))
+  );
+});
+
+watch(() => route.query.q, (newQ) => {
+  if (typeof newQ === 'string') {
+    searchQuery.value = newQ;
+  } else {
+    searchQuery.value = '';
+  }
+}, { immediate: true });
 
 // 加载项目列表
 async function loadProjects() {

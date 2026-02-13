@@ -33,7 +33,7 @@ const axios = require('axios');
  * @param {Array} config.steps - 测试步骤
  * @returns {Promise<object>} 执行结果
  */
-async function execute(config) {
+async function execute(config, onProgress) {
     const mode = config.mode || 'auto';
 
     // auto 模式下，优先使用浏览器模式，不可用则降级
@@ -51,7 +51,7 @@ async function execute(config) {
         };
     }
 
-    return executeBrowserMode(config);
+    return executeBrowserMode(config, onProgress);
 }
 
 /**
@@ -126,7 +126,7 @@ function getLocator(page, selector) {
 /**
  * 浏览器模式 - 使用 Playwright 执行完整 UI 测试
  */
-async function executeBrowserMode(config) {
+async function executeBrowserMode(config, onProgress) {
     const startTime = Date.now();
     let browser = null;
     let context = null;
@@ -136,7 +136,8 @@ async function executeBrowserMode(config) {
         // 启动浏览器
         const chromium = playwright.chromium;
         browser = await chromium.launch({
-            headless: true,
+            headless: !config.showBrowser,
+            slowMo: config.showBrowser ? 500 : 0, // 开启显示时增加 500ms 延迟，方便观察
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
@@ -187,7 +188,27 @@ async function executeBrowserMode(config) {
         const stepResults = [];
         for (const step of config.steps || []) {
             const stepResult = await executeStep(page, step);
+
+            // 每步都截个图，实现“过程可视化”
+            try {
+                const stepBuf = await page.screenshot({ type: 'png', scale: 'css' });
+                stepResult.detail = {
+                    ...stepResult.detail,
+                    screenshot: stepBuf.toString('base64')
+                };
+            } catch (e) { /* 截图失败不影响主流程 */ }
+
             stepResults.push(stepResult);
+
+            if (onProgress) {
+                onProgress({
+                    steps: stepResults,
+                    duration: Date.now() - startTime,
+                    consoleLogs,
+                    pageErrors,
+                    mode: 'browser'
+                });
+            }
 
             if (!stepResult.success && step.critical !== false) {
                 break; // 关键步骤失败则终止

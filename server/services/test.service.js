@@ -1,4 +1,5 @@
 const { pool } = require("../db");
+const { processScreenshots } = require("../utils/image.utils");
 
 // 测试项目管理
 async function createProject(name, description) {
@@ -105,25 +106,37 @@ async function createExecution(testCaseId, status, result, duration, errorMessag
     return execution.insertId;
 }
 
-async function getExecutions(testCaseId = null, projectId = null) {
+async function getExecutions(testCaseId = null, projectId = null, page = 1, pageSize = 20) {
     // 列表查询不选取 result 列，避免大JSON导致MySQL排序内存溢出 (Out of sort memory)
-    let query = "SELECT e.id, e.test_case_id, e.status, e.duration, e.error_message, e.executed_at, c.name as test_case_name FROM test_executions e JOIN test_cases c ON e.test_case_id = c.id";
+    let baseQuery = " FROM test_executions e JOIN test_cases c ON e.test_case_id = c.id";
+    let whereClause = "";
     const params = [];
 
     if (testCaseId) {
-        query += " WHERE e.test_case_id = ?";
+        whereClause = " WHERE e.test_case_id = ?";
         params.push(testCaseId);
     } else if (projectId) {
-        query += " WHERE c.project_id = ?";
+        whereClause = " WHERE c.project_id = ?";
         params.push(projectId);
     }
 
-    query += " ORDER BY e.executed_at DESC LIMIT 500";
+    // 获取总数
+    const [countResult] = await pool.query("SELECT COUNT(*) as total" + baseQuery + whereClause, params);
+    const total = countResult[0].total;
 
-    const [executions] = await pool.query(query, params);
-    return executions.map(e => {
-        return { ...e, result: {} };
-    });
+    // 获取分页数据
+    let dataQuery = "SELECT e.id, e.test_case_id, e.status, e.duration, e.error_message, e.executed_at, c.name as test_case_name" + baseQuery + whereClause;
+    dataQuery += " ORDER BY e.executed_at DESC LIMIT ? OFFSET ?";
+
+    const offset = (page - 1) * pageSize;
+    const [executions] = await pool.query(dataQuery, [...params, pageSize, offset]);
+
+    return {
+        items: executions.map(e => ({ ...e, result: {} })),
+        total,
+        page,
+        pageSize
+    };
 }
 
 // 剥离result中的截图base64数据，用标记替换
@@ -151,17 +164,48 @@ async function getExecutionById(id) {
     );
     if (executions.length === 0) return null;
     const execution = executions[0];
+    const result = typeof execution.result === 'string' ? JSON.parse(execution.result) : (execution.result || {});
+
+    // Re-hydrate screenshots if they are stored as paths
+    const fs = require('fs').promises;
+    const path = require('path');
+
+    const loadScreenshot = async (filename) => {
+        if (!filename) return null;
+        if (filename.startsWith('data:image')) return filename.replace(/^data:image\/\w+;base64,/, "");
+        try {
+            const data = await fs.readFile(path.join(__dirname, '../public/screenshots', filename));
+            return data.toString('base64');
+        } catch (e) {
+            return null;
+        }
+    };
+
+    if (result.screenshotPath) {
+        result.screenshot = await loadScreenshot(result.screenshotPath);
+    }
+    if (result.steps && Array.isArray(result.steps)) {
+        for (const step of result.steps) {
+            if (step.detail && step.detail.screenshotPath) {
+                step.detail.screenshot = await loadScreenshot(step.detail.screenshotPath);
+            }
+        }
+    }
+
     return {
         ...execution,
-        result: typeof execution.result === 'string' ? JSON.parse(execution.result) : execution.result
+        result
     };
 }
 
 async function updateExecutionStatus(id, status, result, errorMessage = null) {
-    const duration = result && result.duration ? result.duration : null;
+    // Process screenshots in result before saving
+    const processedResult = await processScreenshots(result);
+
+    const duration = processedResult && processedResult.duration ? processedResult.duration : null;
     const [execution] = await pool.query(
         "UPDATE test_executions SET status = ?, result = ?, duration = ?, error_message = ? WHERE id = ?",
-        [status, JSON.stringify(result), duration, errorMessage, id]
+        [status, JSON.stringify(processedResult), duration, errorMessage, id]
     );
     return execution.affectedRows > 0;
 }
@@ -185,5 +229,17 @@ module.exports = {
     createExecution,
     getExecutions,
     getExecutionById,
-    updateExecutionStatus
+    updateExecutionStatus,
+    updateExecutionResult
 };
+
+async function updateExecutionResult(id, result) {
+    // Process screenshots in result before saving
+    const processedResult = await processScreenshots(result);
+
+    const [execution] = await pool.query(
+        "UPDATE test_executions SET result = ? WHERE id = ?",
+        [JSON.stringify(processedResult), id]
+    );
+    return execution.affectedRows > 0;
+}

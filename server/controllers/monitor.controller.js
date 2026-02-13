@@ -46,15 +46,19 @@ async function logError(req, res) {
 // 获取错误列表
 async function getErrors(req, res) {
     try {
-        const { errorType, limit } = req.query;
-        const errors = await monitorService.getErrors(
+        const { errorType, page, pageSize } = req.query;
+        const result = await monitorService.getErrors(
             errorType || null,
-            limit ? parseInt(limit) : 100
+            page ? parseInt(page) : 1,
+            pageSize ? parseInt(pageSize) : 20
         );
 
         return res.json({
             code: "OK",
-            data: errors
+            data: result.items,
+            total: result.total,
+            page: result.page,
+            pageSize: result.pageSize
         });
     } catch (e) {
         console.error(e);

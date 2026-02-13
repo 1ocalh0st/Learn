@@ -86,17 +86,21 @@ async function execute(config) {
 
                 const requestPromise = sendRequest(target, method, headers, body, timeout)
                     .then(result => {
-                        completedRequests++;
-                        secondData.completed++;
-                        latencies.push(result.latency);
-                        secondData.latencies.push(result.latency);
-
                         // 统计状态码
                         const code = result.status || 'error';
                         statusCodes[code] = (statusCodes[code] || 0) + 1;
 
-                        // 统计字节数
-                        totalBytes += result.bytes || 0;
+                        // HTTP 4xx/5xx 视为失败请求
+                        if (code >= 400) {
+                            failedRequests++;
+                            secondData.failed++;
+                        } else {
+                            completedRequests++;
+                            secondData.completed++;
+                            latencies.push(result.latency);
+                            secondData.latencies.push(result.latency);
+                            totalBytes += result.bytes || 0;
+                        }
 
                         activeConcurrent--;
                     })
@@ -136,7 +140,7 @@ async function execute(config) {
         const metrics = calculateMetrics(latencies, statusCodes, totalRequests, completedRequests, failedRequests, totalDuration, peakConcurrent, totalBytes);
 
         return {
-            success: failedRequests / totalRequests < 0.5, // 失败率低于50%视为成功
+            success: completedRequests / totalRequests >= 0.95, // 超过95%的请求成功且状态码正常才视为成功
             duration: totalDuration,
             metrics,
             secondlyData,

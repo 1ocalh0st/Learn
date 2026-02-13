@@ -15,20 +15,30 @@ async function logError(errorType, message, stackTrace, userAgent, url, userId =
 }
 
 // 获取错误列表
-async function getErrors(limit = 100, errorType = null) {
-    const validLimit = isNaN(Number(limit)) ? 100 : Number(limit);
-    let query = "SELECT * FROM production_errors";
+async function getErrors(errorType = null, page = 1, pageSize = 20) {
+    let whereClause = "";
     const params = [];
 
     if (errorType) {
-        query += " WHERE error_type = ?";
+        whereClause = " WHERE error_type = ?";
         params.push(errorType);
     }
 
-    query += ` ORDER BY created_at DESC LIMIT ${validLimit}`;
+    // 获取总数
+    const [countResult] = await pool.query("SELECT COUNT(*) as total FROM production_errors" + whereClause, params);
+    const total = countResult[0].total;
 
-    const [rows] = await pool.query(query, params);
-    return rows;
+    // 获取分页数据
+    let query = "SELECT * FROM production_errors" + whereClause + " ORDER BY created_at DESC LIMIT ? OFFSET ?";
+    const offset = (page - 1) * pageSize;
+    const [rows] = await pool.query(query, [...params, pageSize, offset]);
+
+    return {
+        items: rows,
+        total,
+        page,
+        pageSize
+    };
 }
 
 // 获取错误统计

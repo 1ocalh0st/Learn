@@ -4,7 +4,7 @@
     <a-page-header title="生产环境监控" subtitle="实时错误监控和告警" @back="$router.push('/')">
       <template #extra>
         <a-space>
-          <a-button @click="loadErrors">
+          <a-button @click="loadErrors(1)">
             <template #icon><icon-refresh /></template>
             刷新
           </a-button>
@@ -58,28 +58,24 @@
     <!-- 筛选栏 -->
     <a-card class="filter-card">
       <a-space>
-        <a-select v-model="filterType" placeholder="错误类型" allow-clear style="width: 150px" @change="loadErrors">
+        <a-select v-model="filterType" placeholder="错误类型" allow-clear style="width: 150px" @change="loadErrors(1)">
           <a-option value="frontend">前端错误</a-option>
           <a-option value="backend">后端错误</a-option>
         </a-select>
-        <a-input-number
-          v-model="limitCount"
-          :min="10"
-          :max="500"
-          :step="10"
-          placeholder="显示数量"
-          style="width: 150px"
-          @change="loadErrors"
-        />
+        <a-button @click="loadErrors(1)">
+          <template #icon><icon-refresh /></template>
+          刷新
+        </a-button>
       </a-space>
     </a-card>
 
     <!-- 错误列表 -->
     <a-table
       :data="errors"
-      :pagination="{ pageSize: 20 }"
+      :pagination="monitorPagination"
       :loading="loading"
       class="errors-table"
+      @page-change="loadErrors"
     >
       <template #columns>
         <a-table-column title="ID" data-index="id" :width="80" />
@@ -197,24 +193,35 @@ const stats = ref({
 });
 const loading = ref(false);
 const filterType = ref<string>('');
-const limitCount = ref(100);
 const showErrorDetail = ref(false);
 const currentError = ref<ProductionError | null>(null);
 
+const monitorPagination = ref({
+  current: 1,
+  pageSize: 20,
+  total: 0,
+  showTotal: true
+});
+
 // 加载错误列表
-async function loadErrors() {
+async function loadErrors(page = 1) {
   loading.value = true;
+  monitorPagination.value.current = page;
   try {
-    const params = new URLSearchParams({ limit: String(limitCount.value) });
+    const params = new URLSearchParams({ 
+      page: String(page),
+      pageSize: String(monitorPagination.value.pageSize)
+    });
     if (filterType.value) {
       params.append('errorType', filterType.value);
     }
 
-    const res = await request<{ code: string; data: ProductionError[] }>(
+    const res = await request<{ code: string; data: ProductionError[]; total: number }>(
       `/api/monitor/errors?${params.toString()}`
     );
     if (res.code === 'OK') {
       errors.value = res.data;
+      monitorPagination.value.total = res.total;
     }
   } catch (error: any) {
     Message.error('加载错误列表失败: ' + error.message);

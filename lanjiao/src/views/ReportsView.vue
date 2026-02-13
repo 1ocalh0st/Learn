@@ -13,18 +13,14 @@
     <!-- 报告列表 -->
     <a-table
       :data="reports"
-      :pagination="{ pageSize: 10 }"
       :loading="loading"
+      :pagination="reportPagination"
       class="reports-table"
+      @page-change="loadReports"
     >
       <template #columns>
         <a-table-column title="报告ID" data-index="id" :width="100" />
-        <a-table-column title="项目" data-index="project_id" :width="150">
-          <template #cell="{ record }">
-            <span v-if="record.project_id">项目 #{{ record.project_id }}</span>
-            <span v-else>-</span>
-          </template>
-        </a-table-column>
+        <a-table-column title="项目" data-index="project_name" :width="150" />
         <a-table-column title="统计信息" :width="400">
           <template #cell="{ record }">
             <a-space>
@@ -51,6 +47,12 @@
                 <template #icon><icon-download /></template>
                 下载
               </a-button>
+              <a-popconfirm content="确定要删除该报告吗？" @ok="deleteReport(record.id)">
+                <a-button size="small" status="danger">
+                  <template #icon><icon-delete /></template>
+                  删除
+                </a-button>
+              </a-popconfirm>
             </a-space>
           </template>
         </a-table-column>
@@ -63,13 +65,15 @@
       title="生成测试报告"
       @ok="handleGenerate"
       @cancel="showGenerateModal = false"
+      :mask-closable="false"
+      width="850px"
     >
       <a-form :model="generateForm" layout="vertical">
         <a-form-item label="1. 选择项目" required>
           <a-select 
             v-model="generateForm.projectId" 
             placeholder="请先选择所属项目"
-            @change="loadExecutions"
+            @change="loadExecutions(1)"
           >
             <a-option v-for="project in projects" :key="project.id" :value="project.id">
               {{ project.name }}
@@ -77,20 +81,34 @@
           </a-select>
         </a-form-item>
         <a-form-item label="2. 选择执行记录" required>
-          <a-select
-            v-model="generateForm.executionIds"
-            multiple
-            :disabled="!generateForm.projectId"
-            :placeholder="generateForm.projectId ? '请选择要包含在报告中的执行记录' : '请先选择项目'"
+          <a-table
+            :data="executions"
+            :pagination="executionPagination"
+            row-key="id"
+            :row-selection="{ type: 'checkbox', showCheckedAll: true }"
+            v-model:selected-keys="generateForm.executionIds"
+            size="medium"
+            bordered
+            style="width: 100%"
+            @page-change="loadExecutions"
           >
-            <a-option v-for="exec in executions" :key="exec.id" :value="exec.id">
-               [#{{ exec.id }}] {{ exec.test_case_name || '未知用例' }} - 
-               <span :style="{ color: exec.status === 'passed' ? '#00b42a' : '#f53f3f' }">
-                 {{ exec.status.toUpperCase() }}
-               </span>
-               ({{ formatDate(exec.executed_at) }})
-            </a-option>
-          </a-select>
+            <template #columns>
+              <a-table-column title="ID" data-index="id" :width="70" />
+              <a-table-column title="用例名称" data-index="test_case_name" />
+              <a-table-column title="状态" :width="100">
+                <template #cell="{ record }">
+                  <a-tag :color="record.status === 'passed' ? 'green' : 'red'">
+                    {{ record.status === 'passed' ? '通过' : '失败' }}
+                  </a-tag>
+                </template>
+              </a-table-column>
+              <a-table-column title="时间" :width="180">
+                <template #cell="{ record }">
+                  {{ formatDate(record.executed_at) }}
+                </template>
+              </a-table-column>
+            </template>
+          </a-table>
           <template #extra v-if="generateForm.projectId && executions.length === 0">
             <span style="color: var(--color-text-3)">该项目暂无执行记录</span>
           </template>
@@ -110,8 +128,8 @@
           <a-descriptions-item label="报告ID">
             {{ currentReport.id }}
           </a-descriptions-item>
-          <a-descriptions-item label="项目ID">
-            {{ currentReport.project_id || '-' }}
+          <a-descriptions-item label="项目名称">
+            {{ currentReport.project_name || '-' }}
           </a-descriptions-item>
           <a-descriptions-item label="总用例数">
             <a-tag color="blue">{{ currentReport.summary.total }}</a-tag>
@@ -157,6 +175,7 @@ import {
   IconPlus,
   IconEye,
   IconDownload,
+  IconDelete
 } from '@arco-design/web-vue/es/icon';
 
 const userStore = useUserStore();
@@ -164,6 +183,7 @@ const userStore = useUserStore();
 interface Report {
   id: number;
   project_id: number | null;
+  project_name?: string;
   execution_ids: number[];
   summary: {
     total: number;
@@ -196,18 +216,35 @@ const showGenerateModal = ref(false);
 const showReportDetail = ref(false);
 const currentReport = ref<Report | null>(null);
 
+const reportPagination = ref({
+  current: 1,
+  pageSize: 10,
+  total: 0,
+  showTotal: true
+});
+
+const executionPagination = ref({
+  current: 1,
+  pageSize: 10,
+  total: 0,
+  showTotal: true,
+  simple: true
+});
+
 const generateForm = ref({
   projectId: null as number | null,
   executionIds: [] as number[],
 });
 
 // 加载报告列表
-async function loadReports() {
+async function loadReports(page = 1) {
   loading.value = true;
   try {
-    const res = await request<{ code: string; data: Report[] }>('/api/reports');
+    reportPagination.value.current = page;
+    const res = await request<{ code: string; data: Report[]; total: number }>('/api/reports?page=' + page + '&pageSize=' + reportPagination.value.pageSize);
     if (res.code === 'OK') {
       reports.value = res.data;
+      reportPagination.value.total = res.total || res.data.length;
     }
   } catch (error: any) {
     Message.error('加载报告失败: ' + error.message);
@@ -227,14 +264,19 @@ async function loadProjects() {
 }
 
 // 加载执行记录
-async function loadExecutions() {
+async function loadExecutions(page = 1) {
+  if (!generateForm.value.projectId) return;
+  executionPagination.value.current = page;
   try {
     const params = new URLSearchParams();
-    if (generateForm.value.projectId) {
-      params.append('projectId', String(generateForm.value.projectId));
-    }
-    const res = await request<{ data: Execution[] }>(`/api/test/executions?${params.toString()}`);
-    executions.value = res.data;
+    params.append('projectId', String(generateForm.value.projectId));
+    params.append('page', String(page));
+    params.append('pageSize', String(executionPagination.value.pageSize));
+    
+    const res = await request<{ code: string; data: Execution[]; total: number }>(`/api/test/executions?${params.toString()}`);
+    // 后端返回的是 { data, total, page, pageSize }
+    executions.value = res.data || [];
+    executionPagination.value.total = res.total || 0;
   } catch (error: any) {
     // 忽略错误
   }
@@ -309,6 +351,17 @@ async function downloadReport(id: number) {
   }
 }
 
+// 删除报告
+async function deleteReport(id: number) {
+  try {
+    await request(`/api/reports/${id}`, { method: 'DELETE' });
+    Message.success('报告删除成功');
+    loadReports(reportPagination.value.current);
+  } catch (error: any) {
+    Message.error('删除报告失败: ' + error.message);
+  }
+}
+
 function formatDate(dateStr: string) {
   return new Date(dateStr).toLocaleString('zh-CN');
 }
@@ -327,6 +380,7 @@ onMounted(() => {
 
 .reports-table {
   margin-top: 24px;
+  
 }
 
 .report-detail {

@@ -21,6 +21,8 @@ const app = express();
 
 app.use(cors());
 app.use(express.json());
+// 静态资源：截图
+app.use("/api/screenshots", express.static(path.join(__dirname, "public/screenshots")));
 
 // 调试中间件
 app.use((req, res, next) => {
@@ -38,6 +40,12 @@ async function testDB() {
 }
 testDB();
 
+// 测试平台API路由
+app.use("/api/test", testRoutes);
+app.use("/api/reports", reportRoutes);
+app.use("/api/monitor", monitorRoutes);
+app.use("/api/ai", aiRoutes);
+
 // 先注册第三方登录路由（不需要认证的放前面）
 app.use("/api", wechatRoutes);
 app.use("/api", qqRoutes);
@@ -45,12 +53,6 @@ app.use("/api", githubRoutes);
 app.use("/api", authRoutes);
 app.use("/api", userRoutes);
 app.use("/api", fileRoutes);
-
-// 测试平台API路由
-app.use("/api/test", testRoutes);
-app.use("/api/reports", reportRoutes);
-app.use("/api/monitor", monitorRoutes);
-app.use("/api/ai", aiRoutes);
 
 app.listen(3000, () => {
   console.log("API server running at http://localhost:3000");

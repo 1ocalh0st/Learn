@@ -11,20 +11,68 @@ html, body {
   padding: 0;
   width: 100%;
   min-height: 100vh;
-  /* 确保这里没有 display: grid 或 flex */
 }
 
-/* 基础文字样式（可选） */
+/* 字体系统 - 现代化设计 */
+:root {
+  /* 基础正文字体: 清晰、通用、易读 */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, 
+    "PingFang SC", "HarmonyOS Sans", "Microsoft YaHei", sans-serif;
+
+  /* 标题字体: 个性强、几何感、厚重 */
+  --font-heading: 'Outfit', 'Plus Jakarta Sans', var(--font-sans);
+
+  /* 代码/数字字体: 专业、等宽、科技感 */
+  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* 基础文字样式 */
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu,
-    Cantarell, 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: var(--color-bg-1); /* Use Arco's background variable */
+  background-color: var(--color-bg-1);
+  color: var(--color-text-1);
+  line-height: 1.5;
+}
+
+/* 标题样式统一 */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+  font-weight: 700; /* Bold */
+  letter-spacing: -0.02em; /* 这里让大标题稍微紧凑一点，更有高级感 */
+  color: var(--color-text-1);
+}
+
+/* 数字样式优化 - 使用特定字体增加科技感 */
+.stat-value, .time-number, .online-time-value, .project-count {
+  font-family: var(--font-heading); /* 这里的数字用 Outfit 会更好看 */
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.5px;
+}
+
+/* 代码样式 */
+code, pre, .log-content {
+  font-family: var(--font-mono);
 }
 
 /* 移除链接默认下划线 */
 a {
   text-decoration: none;
   color: inherit;
+  transition: color 0.2s ease;
+}
+
+/** Arco Design Override - 如果需要覆盖 Arco 默认字体 **/
+.arco-btn {
+  font-family: var(--font-sans);
+  font-weight: 500;
+}
+
+.arco-menu {
+  font-family: var(--font-sans);
+}
+
+.arco-typography-title {
+  font-family: var(--font-heading) !important;
 }

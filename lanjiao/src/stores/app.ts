@@ -5,8 +5,12 @@ export const useAppStore = defineStore('app', () => {
   const theme = ref(localStorage.getItem('theme') || 'light')
 
   const toggleTheme = () => {
-    theme.value = theme.value === 'light' ? 'dark' : 'light'
-    localStorage.setItem('theme', theme.value)
+    setTheme(theme.value === 'light' ? 'dark' : 'light')
+  }
+
+  const setTheme = (val: string) => {
+    theme.value = val
+    localStorage.setItem('theme', val)
     applyTheme()
   }
 
@@ -24,6 +28,7 @@ export const useAppStore = defineStore('app', () => {
   return {
     theme,
     toggleTheme,
+    setTheme,
     applyTheme
   }
 })

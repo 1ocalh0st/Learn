@@ -52,14 +52,19 @@ async function generateReport(req, res) {
 // 获取报告列表
 async function getReports(req, res) {
     try {
-        const { projectId } = req.query;
-        const reports = await reportService.getReports(
-            projectId ? parseInt(projectId) : null
+        const { projectId, page, pageSize } = req.query;
+        const result = await reportService.getReports(
+            projectId ? parseInt(projectId) : null,
+            page ? parseInt(page) : 1,
+            pageSize ? parseInt(pageSize) : 10
         );
 
         return res.json({
             code: "OK",
-            data: reports
+            data: result.items,
+            total: result.total,
+            page: result.page,
+            pageSize: result.pageSize
         });
     } catch (e) {
         console.error(e);
@@ -120,9 +125,36 @@ async function downloadReport(req, res) {
     }
 }
 
+// 删除报告
+async function deleteReport(req, res) {
+    try {
+        const { id } = req.params;
+        const success = await reportService.deleteReport(parseInt(id));
+
+        if (!success) {
+            return res.status(404).json({
+                code: "NOT_FOUND",
+                message: "报告不存在"
+            });
+        }
+
+        return res.json({
+            code: "OK",
+            message: "报告删除成功"
+        });
+    } catch (e) {
+        console.error(e);
+        return res.status(500).json({
+            code: "SERVER_ERROR",
+            message: "服务器错误"
+        });
+    }
+}
+
 module.exports = {
     generateReport,
     getReports,
     getReportById,
-    downloadReport
+    downloadReport,
+    deleteReport
 };

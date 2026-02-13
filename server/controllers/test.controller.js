@@ -268,16 +268,24 @@ async function executeTest(testCase, executionId) {
     try {
         let result;
 
-        // 根据测试类型调用不同的执行引擎 (下一步将实现)
+        const onProgress = async (partialResult) => {
+            try {
+                await testService.updateExecutionResult(executionId, partialResult);
+            } catch (err) {
+                console.error('Failed to update progress', err);
+            }
+        };
+
+        // 根据测试类型调用不同的执行引擎
         if (testCase.type === 'api') {
             const apiTester = require('../engines/api-tester');
-            result = await apiTester.execute(testCase.config);
+            result = await apiTester.execute(testCase.config, onProgress);
         } else if (testCase.type === 'ui') {
             const uiTester = require('../engines/ui-tester');
-            result = await uiTester.execute(testCase.config);
+            result = await uiTester.execute(testCase.config, onProgress);
         } else if (testCase.type === 'load') {
             const loadTester = require('../engines/load-tester');
-            result = await loadTester.execute(testCase.config);
+            result = await loadTester.execute(testCase.config, onProgress);
         }
 
         const duration = Date.now() - startTime;
@@ -310,15 +318,20 @@ async function executeTest(testCase, executionId) {
 // 获取执行历史
 async function getExecutions(req, res) {
     try {
-        const { testCaseId, projectId } = req.query;
-        const executions = await testService.getExecutions(
+        const { testCaseId, projectId, page, pageSize } = req.query;
+        const result = await testService.getExecutions(
             testCaseId ? parseInt(testCaseId) : null,
-            projectId ? parseInt(projectId) : null
+            projectId ? parseInt(projectId) : null,
+            page ? parseInt(page) : 1,
+            pageSize ? parseInt(pageSize) : 20
         );
 
         return res.json({
             code: "OK",
-            data: executions
+            data: result.items,
+            total: result.total,
+            page: result.page,
+            pageSize: result.pageSize
         });
     } catch (e) {
         console.error(e);

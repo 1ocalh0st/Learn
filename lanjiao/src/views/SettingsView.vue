@@ -22,7 +22,7 @@
             <div class="setting-label">主题模式</div>
             <div class="setting-desc">选择浅色或深色主题</div>
           </div>
-          <a-radio-group v-model="settings.theme" type="button" @change="handleThemeChange">
+          <a-radio-group v-model="activeTheme" type="button">
             <a-radio value="light">
               <icon-sun /> 浅色
             </a-radio>
@@ -260,7 +260,6 @@ const themeColors = [
 ];
 
 const settings = reactive({
-  theme: appStore.theme,
   primaryColor: localStorage.getItem("primaryColor") || "#165dff",
   compactMode: localStorage.getItem("compactMode") === "true",
   notifications: localStorage.getItem("notifications") !== "false",
@@ -279,6 +278,14 @@ const passwordForm = reactive({
   confirmPassword: "",
 });
 
+const activeTheme = computed({
+  get: () => appStore.theme,
+  set: (val) => {
+    appStore.setTheme(val);
+    saveSettings();
+  }
+});
+
 const cacheSize = computed(() => {
   // 估算localStorage大小
   let total = 0;
@@ -292,10 +299,7 @@ const cacheSize = computed(() => {
   return `${(total / 1024 / 1024).toFixed(1)} MB`;
 });
 
-function handleThemeChange(value: string | number | boolean) {
-  appStore.toggleTheme();
-  saveSettings();
-}
+// Removed handleThemeChange as it's handled by activeTheme computed property
 
 function handlePrimaryColorChange(color: string) {
   settings.primaryColor = color;
@@ -413,7 +417,7 @@ async function handlePasswordChange() {
 
 .settings-card:hover {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
-  background: #fcfcfc;
+  background: var(--color-fill-1);
 }
 
 .card-title {

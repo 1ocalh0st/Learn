@@ -8,6 +8,10 @@
             <template #icon><icon-file /></template>
             查看报告
           </a-button>
+          <a-button @click="openEditProject">
+            <template #icon><icon-settings /></template>
+            项目设置
+          </a-button>
           <a-button type="primary" @click="openCreateCase">
             <template #icon><icon-plus /></template>
             新建用例
@@ -25,8 +29,8 @@
           <a-option value="load">压力测试</a-option>
         </a-select>
         <a-button @click="loadTestCases">
-          <template #icon><icon-refresh /></template>
-          刷新
+          <template #icon><icon-search /></template>
+          搜索
         </a-button>
       </a-space>
     </a-card>
@@ -294,28 +298,56 @@
           </a-form-item>
 
           <a-row :gutter="16">
-            <a-col :span="8">
-              <a-form-item label="测试模式">
-                <a-select v-model="caseForm.config.mode">
+            <a-col :span="6">
+              <a-form-item label="加载模式">
+                <a-select v-model="caseForm.config.mode" placeholder="模式">
                   <a-option value="auto">自动 (优先浏览器)</a-option>
                   <a-option value="browser">浏览器模式</a-option>
                   <a-option value="http">HTTP模式 (轻量)</a-option>
                 </a-select>
               </a-form-item>
             </a-col>
-            <a-col :span="8">
+            <a-col :span="6">
               <a-form-item label="视窗宽度">
                 <a-input-number v-model="caseForm.config.viewportWidth" :min="320" :max="3840" />
               </a-form-item>
             </a-col>
-            <a-col :span="8">
+            <a-col :span="6">
               <a-form-item label="视窗高度">
                 <a-input-number v-model="caseForm.config.viewportHeight" :min="240" :max="2160" />
               </a-form-item>
             </a-col>
+            <a-col :span="6">
+              <a-form-item label="显示浏览器执行">
+                <a-switch v-model="caseForm.config.showBrowser">
+                   <template #checked>开启</template>
+                   <template #unchecked>关闭</template>
+                </a-switch>
+              </a-form-item>
+            </a-col>
           </a-row>
 
-          <a-divider>测试步骤</a-divider>
+          <a-divider>
+            测试步骤
+            <a-popover title="定位器写法说明" position="right">
+              <template #content>
+                <div style="max-width: 400px; line-height: 1.8">
+                  <p>支持多种精准定位方式，识别前缀：</p>
+                  <ul style="padding-left: 20px">
+                    <li><b>文本定位</b>：<code>text=登录</code> (匹配包含“登录”文本的元素)</li>
+                    <li><b>占位符</b>：<code>placeholder=请输入用户名</code> (匹配 input)</li>
+                    <li><b>角色定位</b>：<code>role=button[name=提交]</code> (按 HTML 角色和名称)</li>
+                    <li><b>标签定位</b>：<code>label=用户名</code> (匹配关联 label 的元素)</li>
+                    <li><b>测试 ID</b>：<code>data-testid=login-btn</code> (匹配 data-testid 属性)</li>
+                    <li><b>XPath</b>：<code>xpath=//div[@id='root']</code></li>
+                    <li><b>CSS 选择器</b>：直接写，如 <code>#id</code>, <code>.class</code>, <code>button</code></li>
+                  </ul>
+                  <p><b>进阶技巧</b>：使用 <code>nth=0:text=提交</code> 匹配第1个出现的“提交”按钮。</p>
+                </div>
+              </template>
+              <icon-question-circle-fill style="color: var(--color-text-3); cursor: pointer; margin-left: 4px" />
+            </a-popover>
+          </a-divider>
 
           <div v-for="(step, index) in uiSteps" :key="index" class="step-row">
             <div class="step-number">{{ index + 1 }}</div>
@@ -569,20 +601,25 @@
       title="测试执行结果"
       :footer="false"
       width="850px"
+      :mask-closable="false"
     >
       <template v-if="executionResult">
         <!-- 顶部状态 -->
         <a-result
-          :status="executionResult.status === 'passed' ? 'success' : 'error'"
+          :status="executionResult.status === 'passed' ? 'success' : (executionResult.status === 'running' ? 'info' : 'error')"
         >
           <template #title>
              <div style="display: flex; align-items: center; justify-content: center; gap: 8px;">
                <icon-check-circle-fill v-if="executionResult.status === 'passed'" style="color: #00b42a" />
+               <icon-loading v-else-if="executionResult.status === 'running'" style="color: #165dff" />
                <icon-close-circle-fill v-else style="color: #f53f3f" />
-               {{ executionResult.status === 'passed' ? '测试通过' : '测试失败' }}
+               {{ 
+                 executionResult.status === 'passed' ? '测试通过' : 
+                 (executionResult.status === 'running' ? '测试执行中...' : '测试失败') 
+               }}
              </div>
           </template>
-          <template #subtitle>
+          <template #subtitle v-if="executionResult.executed_at">
             执行时间: {{ formatDate(executionResult.executed_at) }}
           </template>
         </a-result>
@@ -592,7 +629,7 @@
         <!-- 基本信息 -->
         <a-descriptions :column="2" bordered size="small">
           <a-descriptions-item label="状态">
-            <a-tag :color="executionResult.status === 'passed' ? 'green' : 'red'">
+            <a-tag :color="executionResult.status === 'passed' ? 'green' : (executionResult.status === 'running' ? 'arcoblue' : 'red')">
               {{ executionResult.status }}
             </a-tag>
           </a-descriptions-item>
@@ -632,13 +669,46 @@
                 </span>
                 <span class="assertion-type">{{ a.type }}</span>
                 <span v-if="a.path" class="assertion-path">{{ a.path }}</span>
-                <span class="assertion-msg">{{ (a.message || '').replace(/^\[(PASS|FAIL)\] /, '') }}</span>
+                <div class="assertion-msg-wrapper">
+                  <span class="assertion-msg" :class="{ 'is-expanded': expandedMessages['a-'+i] }">
+                    {{ (a.message || '').replace(/^\[(PASS|FAIL)\] /, '') }}
+                  </span>
+                  <a-link v-if="(a.message || '').length > 100" size="small" @click="toggleMessage('a-'+i)" style="padding: 0; font-size: 11px; height: auto;">
+                    {{ expandedMessages['a-'+i] ? '收起' : '展开全文' }}
+                  </a-link>
+                </div>
+              </div>
+            </div>
+
+            <!-- 响应详情 -->
+            <div class="api-response-details" style="margin-top: 16px">
+              <a-collapse :default-active-key="[]" expand-icon-position="right">
+                <a-collapse-item header="响应头 (Headers)" key="headers">
+                  <div class="response-headers">
+                    <div v-for="(value, key) in parsedResult.response.headers" :key="key" class="header-row">
+                      <span class="header-key">{{ key }}:</span>
+                      <span class="header-value">{{ value }}</span>
+                    </div>
+                  </div>
+                </a-collapse-item>
+              </a-collapse>
+
+              <div style="margin-top: 12px">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px">
+                  <h4 style="margin: 0">响应内容 (Response Body)</h4>
+                  <a-button size="mini" @click="copyToClipboard(parsedResult.response.data)">
+                    <template #icon><icon-copy /></template>复制
+                  </a-button>
+                </div>
+                <div class="response-body-wrapper">
+                  <pre class="response-body">{{ formatResponseData(parsedResult.response.data) }}</pre>
+                </div>
               </div>
             </div>
           </div>
 
           <!-- UI测试结果 -->
-          <div v-if="parsedResult.steps && !parsedResult.metrics">
+          <div v-if="parsedResult.steps || (currentTestCase && currentTestCase.type === 'ui')">
             <div v-if="parsedResult.mode" style="margin-bottom: 12px">
               <a-tag color="blue">{{ parsedResult.mode === 'browser' ? '浏览器模式' : 'HTTP模式' }}</a-tag>
             </div>
@@ -660,29 +730,41 @@
               </a-descriptions>
             </div>
 
-            <h4>步骤执行结果</h4>
-            <div v-for="(s, i) in parsedResult.steps" :key="i"
-                 :class="['step-result', s.success ? 'passed' : 'failed']">
+            <h4>步骤执行流程</h4>
+            <div v-for="(s, i) in combinedSteps" :key="i"
+                 :class="['step-result', getStepStatusClass(s)]">
               <span class="step-result-number">{{ Number(i) + 1 }}</span>
               <span class="step-result-icon">
-                <icon-check-circle-fill v-if="s.success" style="color: #00b42a" />
-                <icon-close-circle-fill v-else style="color: #f53f3f" />
+                <icon-check-circle-fill v-if="s.success === true" style="color: #00b42a" />
+                <icon-close-circle-fill v-else-if="s.success === false" style="color: #f53f3f" />
+                <icon-loading v-else-if="s.isRunning" style="color: #165dff" />
+                <icon-clock-circle v-else style="color: #888" />
               </span>
               <span class="step-result-action">{{ s.action }}</span>
               <span v-if="s.duration" class="step-result-duration">{{ s.duration }}ms</span>
-              <span class="step-result-msg">{{ (s.message || '').replace(/^\[(PASS|FAIL)\] /, '') }}</span>
+              <div class="step-result-msg-wrapper">
+                <span class="step-result-msg" :class="{ 'is-expanded': expandedMessages['s-'+i] }">
+                  {{ (s.message || (s.isRunning ? '执行中... (可能较慢, 请稍候)' : '等待执行...')).replace(/^\[(PASS|FAIL)\] /, '') }}
+                </span>
+                <a-link v-if="(s.message || '').length > 100" size="small" @click="toggleMessage('s-'+i)" style="padding: 0; font-size: 11px; height: auto;">
+                  {{ expandedMessages['s-'+i] ? '收起' : '展开全文' }}
+                </a-link>
+              </div>
               <div v-if="s.detail?.screenshot" style="margin-top: 8px">
                 <img :src="'data:image/png;base64,' + s.detail.screenshot" class="screenshot-img" style="max-width: 400px; display: block;" />
               </div>
             </div>
 
             <!-- 控制台日志 -->
-            <div v-if="parsedResult.console && parsedResult.console.length > 0" style="margin-top: 16px">
+            <div v-if="parsedResult.consoleLogs && parsedResult.consoleLogs.length > 0" style="margin-top: 16px">
               <a-collapse>
-                <a-collapse-item header="控制台日志" key="console">
-                  <div v-for="(log, i) in parsedResult.console" :key="i" class="console-log"
-                       :class="log.type === 'error' ? 'error' : ''">
-                    [{{ log.type }}] {{ log.text }}
+                <a-collapse-item header="浏览器控制台日志" key="console">
+                  <div v-for="(log, i) in parsedResult.consoleLogs" :key="i" class="console-box" style="margin-bottom: 4px">
+                    <span :class="['console-log', log.type]" style="font-family: monospace; font-size: 12px;">
+                      <span style="opacity: 0.6">[{{ new Date(log.timestamp).toLocaleTimeString() }}]</span>
+                      <a-tag size="small" :color="log.type === 'error' ? 'red' : 'gray'" style="margin: 0 4px">{{ log.type }}</a-tag>
+                      {{ log.text }}
+                    </span>
                   </div>
                 </a-collapse-item>
               </a-collapse>
@@ -704,47 +786,110 @@
 
           <!-- 压力测试结果 -->
           <div v-if="parsedResult.metrics">
+            <div class="load-test-header">
+              <a-row :gutter="16">
+                <a-col :span="6">
+                  <div class="metric-card">
+                    <div class="metric-label">总请求数</div>
+                    <div class="metric-value">{{ parsedResult.metrics.requests?.total || 0 }}</div>
+                  </div>
+                </a-col>
+                <a-col :span="6">
+                  <div class="metric-card">
+                    <div class="metric-label">成功率</div>
+                    <div class="metric-value" :style="{ color: parseFloat(parsedResult.metrics.requests?.successRate) > 95 ? '#00b42a' : '#f53f3f' }">
+                      {{ parsedResult.metrics.requests?.successRate }}
+                    </div>
+                  </div>
+                </a-col>
+                <a-col :span="6">
+                  <div class="metric-card">
+                    <div class="metric-label">平均 RPS</div>
+                    <div class="metric-value">{{ parsedResult.metrics.throughput?.rps }}</div>
+                  </div>
+                </a-col>
+                <a-col :span="6">
+                  <div class="metric-card">
+                    <div class="metric-label">峰值并发</div>
+                    <div class="metric-value">{{ parsedResult.metrics.concurrency?.peak }}</div>
+                  </div>
+                </a-col>
+              </a-row>
+            </div>
+
+            <a-divider orientation="left">延迟统计 (Latency)</a-divider>
             <a-row :gutter="16" style="margin-bottom: 16px">
-              <a-col :span="6">
-                <a-statistic title="总请求数" :value="parsedResult.metrics.requests?.total || 0" />
+              <a-col :span="12">
+                <div class="latency-distribution">
+                  <div class="latency-bar-item">
+                    <span>最小延时</span>
+                    <span class="value">{{ parsedResult.metrics.latency?.min }}ms</span>
+                  </div>
+                  <div class="latency-bar-item">
+                    <span>平均延时</span>
+                    <span class="value">{{ parsedResult.metrics.latency?.mean }}ms</span>
+                  </div>
+                  <div class="latency-bar-item highlight">
+                    <span>P95 (95%请求在这之内)</span>
+                    <span class="value">{{ parsedResult.metrics.latency?.p95 }}ms</span>
+                  </div>
+                  <div class="latency-bar-item warning">
+                    <span>最大延时</span>
+                    <span class="value">{{ parsedResult.metrics.latency?.max }}ms</span>
+                  </div>
+                </div>
               </a-col>
-              <a-col :span="6">
-                <a-statistic title="成功率" :value="parsedResult.metrics.requests?.successRate || '0%'"
-                  :value-style="{ color: parseFloat(parsedResult.metrics.requests?.successRate) > 95 ? '#52c41a' : '#f5222d' }" />
-              </a-col>
-              <a-col :span="6">
-                <a-statistic title="RPS" :value="parsedResult.metrics.throughput?.rps || 0" />
-              </a-col>
-              <a-col :span="6">
-                <a-statistic title="峰值并发" :value="parsedResult.metrics.concurrency?.peak || 0" />
+              <a-col :span="12">
+                <div class="status-distribution-card">
+                  <div style="margin-bottom: 8px; font-weight: bold; font-size: 13px;">响应状态分布</div>
+                  <a-space wrap>
+                    <a-tag v-for="(count, code) in parsedResult.metrics.statusCodes" :key="code"
+                           :color="String(code).startsWith('2') ? 'green' : String(code).startsWith('4') ? 'orange' : 'red'">
+                      HTTP {{ code }}: {{ count }}
+                    </a-tag>
+                  </a-space>
+                </div>
               </a-col>
             </a-row>
 
-            <a-descriptions :column="4" bordered size="small" style="margin-bottom: 16px">
-              <a-descriptions-item label="最小延迟">{{ parsedResult.metrics.latency?.min || 0 }}ms</a-descriptions-item>
-              <a-descriptions-item label="平均延迟">{{ parsedResult.metrics.latency?.mean || 0 }}ms</a-descriptions-item>
-              <a-descriptions-item label="P95">{{ parsedResult.metrics.latency?.p95 || 0 }}ms</a-descriptions-item>
-              <a-descriptions-item label="最大延迟">{{ parsedResult.metrics.latency?.max || 0 }}ms</a-descriptions-item>
-            </a-descriptions>
 
-            <!-- 状态码分布 -->
-            <div v-if="parsedResult.metrics.statusCodes" style="margin-bottom: 16px">
-              <h4>状态码分布</h4>
-              <a-space>
-                <a-tag v-for="(count, code) in parsedResult.metrics.statusCodes" :key="code"
-                       :color="String(code).startsWith('2') ? 'green' : String(code).startsWith('4') ? 'orange' : 'red'">
-                  {{ code }}: {{ count }}
-                </a-tag>
-              </a-space>
-            </div>
 
-            <!-- 摘要 -->
-            <div v-if="parsedResult.summary" class="load-summary">
-              <pre>{{ parsedResult.summary }}</pre>
+            <!-- 总结报告 -->
+            <div v-if="parsedResult.summary" class="load-summary-clean">
+              <div class="summary-title">性能总结</div>
+              <div class="summary-content">{{ parsedResult.summary }}</div>
             </div>
           </div>
         </div>
       </template>
+    </a-modal>
+
+    <!-- 项目编辑弹窗 -->
+    <a-modal
+      v-model:visible="showProjectModal"
+      title="项目设置"
+      @ok="handleUpdateProject"
+      @cancel="showProjectModal = false"
+    >
+      <a-form :model="projectForm" layout="vertical">
+        <a-form-item label="项目名称" required>
+          <a-input
+            v-model="projectForm.name"
+            placeholder="请输入项目名称"
+            :max-length="50"
+            show-word-limit
+          />
+        </a-form-item>
+        <a-form-item label="项目描述">
+          <a-textarea
+            v-model="projectForm.description"
+            placeholder="请输入项目描述"
+            :max-length="500"
+            show-word-limit
+            :auto-size="{ minRows: 3, maxRows: 6 }"
+          />
+        </a-form-item>
+      </a-form>
     </a-modal>
   </div>
 </template>
@@ -766,7 +911,11 @@ import {
   IconDown,
   IconCheckCircleFill,
   IconCloseCircleFill,
-  IconClockCircle,
+  IconQuestionCircleFill,
+  IconSearch,
+  IconCopy,
+  IconLoading,
+  IconSettings,
 } from '@arco-design/web-vue/es/icon';
 
 interface TestCase {
@@ -829,6 +978,12 @@ const caseForm = ref({
   config: getDefaultConfig('api'),
 });
 
+const showProjectModal = ref(false);
+const projectForm = ref({
+  name: '',
+  description: '',
+});
+
 // API测试辅助数据
 const apiHeaders = ref<KVPair[]>([]);
 const apiQueryParams = ref<KVPair[]>([]);
@@ -882,10 +1037,85 @@ const computedAutoHeaders = computed(() => {
 // 解析执行结果
 const parsedResult = computed(() => {
   if (!executionResult.value?.result) return null;
-  return typeof executionResult.value.result === 'string'
+  const res = typeof executionResult.value.result === 'string'
     ? JSON.parse(executionResult.value.result)
     : executionResult.value.result;
+  
+  const stripAnsi = (text: string) => (text || '').replace(/[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><]/g, '');
+
+  if (res.steps) {
+    res.steps.forEach((s: any) => {
+      if (s.message) s.message = stripAnsi(s.message);
+    });
+  }
+  if (res.assertions) {
+    res.assertions.forEach((a: any) => {
+      if (a.message) a.message = stripAnsi(a.message);
+    });
+  }
+  return res;
 });
+
+// 当前正在查看的测试用例对象
+const currentTestCase = computed(() => {
+  if (!executionResult.value?.test_case_id) return null;
+  return testCases.value.find(tc => tc.id === executionResult.value.test_case_id);
+});
+
+// 合并后的步骤列表（包括已执行 + 待执行）
+const combinedSteps = computed(() => {
+  const executedSteps = parsedResult.value?.steps || [];
+  
+  // 如果不是UI测试，只显示已执行的
+  if (!currentTestCase.value || currentTestCase.value.type !== 'ui') {
+    return executedSteps; 
+  }
+
+  const configuredSteps = currentTestCase.value.config.steps || [];
+  
+  return configuredSteps.map((step: any, index: number) => {
+    const executed = executedSteps[index];
+    if (executed) return { ...step, ...executed, isExecuted: true }; // 已执行 (执行结果覆盖原始配置)
+    
+    // 如果上一步已执行完，且当前这一步还没执行，那么这一步就是"正在运行" (或者下一个将要运行)
+    // 简单的判断逻辑：如果 steps.length === index，说明正要执行这个
+    const isRunning = executedSteps.length === index && executionResult.value?.status === 'running';
+    
+    return {
+      ...step,
+      success: undefined, // pending
+      isRunning,
+      message: isRunning ? '执行中... (可能较慢, 请稍候)' : null
+    };
+  });
+});
+
+function getStepStatusClass(step: any) {
+  if (step.success === true) return 'passed';
+  if (step.success === false) return 'failed';
+  if (step.isRunning) return 'running';
+  return 'pending';
+}
+
+const expandedMessages = ref<Record<string, boolean>>({});
+function toggleMessage(id: string) {
+  expandedMessages.value[id] = !expandedMessages.value[id];
+}
+
+function formatResponseData(data: any) {
+  if (!data) return '';
+  if (typeof data === 'object') {
+    return JSON.stringify(data, null, 2);
+  }
+  return data;
+}
+
+function copyToClipboard(data: any) {
+  const text = typeof data === 'object' ? JSON.stringify(data, null, 2) : String(data);
+  navigator.clipboard.writeText(text).then(() => {
+    Message.success('已复制到剪贴板');
+  });
+}
 
 function getDefaultConfig(type: string) {
   switch (type) {
@@ -902,6 +1132,7 @@ function getDefaultConfig(type: string) {
         mode: 'auto',
         viewportWidth: 1280,
         viewportHeight: 720,
+        showBrowser: false,
       };
     case 'load':
       return {
@@ -939,10 +1170,45 @@ function openCreateCase() {
 // 加载项目信息
 async function loadProject() {
   try {
-    const projects = await request<{ data: Project[] }>('/api/test/projects');
-    project.value = projects.data.find(p => p.id === projectId) || null;
+    const res = await request<{ data: Project[] }>('/api/test/projects');
+    const p = res.data.find(p => p.id === projectId) || null;
+    project.value = p;
+    if (p) {
+      projectForm.value = {
+        name: p.name,
+        description: (p as any).description || '',
+      };
+    }
   } catch (error: any) {
     Message.error('加载项目失败: ' + error.message);
+  }
+}
+
+function openEditProject() {
+  if (project.value) {
+    projectForm.value = {
+      name: project.value.name,
+      description: (project.value as any).description || '',
+    };
+    showProjectModal.value = true;
+  }
+}
+
+async function handleUpdateProject() {
+  if (!projectForm.value.name.trim()) {
+    Message.warning('请输入项目名称');
+    return;
+  }
+  try {
+    await request(`/api/test/projects/${projectId}`, {
+      method: 'PUT',
+      body: JSON.stringify(projectForm.value),
+    });
+    Message.success('项目信息已更新');
+    showProjectModal.value = false;
+    await loadProject();
+  } catch (error: any) {
+    Message.error('更新失败: ' + error.message);
   }
 }
 
@@ -979,8 +1245,17 @@ async function executeTest(caseId: number) {
 
     Message.success('测试已开始执行');
 
+    // 立即显示弹窗（哪怕结果还没出来）
+    executionResult.value = {
+      id: res.data.executionId,
+      status: 'running',
+      test_case_id: caseId,
+      result: {},
+    };
+    showExecutionResult.value = true;
+
     // 轮询获取结果
-    setTimeout(() => fetchExecutionResult(res.data.executionId), 2000);
+    fetchExecutionProgress(res.data.executionId);
   } catch (error: any) {
     Message.error('执行失败: ' + error.message);
     executingId.value = null;
@@ -988,32 +1263,30 @@ async function executeTest(caseId: number) {
 }
 
 // 获取执行结果
-async function fetchExecutionResult(executionId: number) {
+// 轮询获取执行进度
+async function fetchExecutionProgress(executionId: number) {
   try {
-    // 先用列表接口轮询状态（轻量，不含截图）
-    const res = await request<{ data: any[] }>(
-      `/api/test/executions?testCaseId=${executingId.value}`
-    );
-    const result = res.data.find(e => e.id === executionId);
+    const res = await request<{ data: any }>(`/api/test/executions/${executionId}`);
+    const detail = res.data;
+    executionResult.value = detail;
 
-    if (result && result.status !== 'running') {
-      // 执行完成后，获取完整详情（含截图）
-      try {
-        const detail = await request<{ data: any }>(`/api/test/executions/${executionId}`);
-        executionResult.value = detail.data;
-      } catch {
-        // 降级：如果详情接口失败，用列表数据
-        executionResult.value = result;
-      }
-      showExecutionResult.value = true;
-      executingId.value = null;
-    } else {
+    if (detail.status === 'running') {
       // 继续轮询
-      setTimeout(() => fetchExecutionResult(executionId), 2000);
+      setTimeout(() => fetchExecutionProgress(executionId), 1000);
+    } else {
+      // 执行完成
+      executingId.value = null;
+      if (detail.status === 'failed') {
+        Message.warning('测试执行失败');
+      } else {
+        Message.success('测试执行通过');
+      }
     }
   } catch (error: any) {
-    Message.error('获取结果失败: ' + error.message);
-    executingId.value = null;
+    // 轮询出错不中断，重试一次
+    if (executingId.value === executionId) { // 确保是当前任务
+       setTimeout(() => fetchExecutionProgress(executionId), 2000);
+    }
   }
 }
 
@@ -1434,13 +1707,13 @@ onMounted(() => {
 .assertion-result,
 .step-result {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   padding: 8px 12px;
   margin-bottom: 6px;
   border-radius: 6px;
   font-size: 13px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .assertion-result.passed,
@@ -1453,6 +1726,17 @@ onMounted(() => {
 .step-result.failed {
   background: rgba(245, 34, 45, 0.08);
   border-left: 3px solid #f5222d;
+}
+
+.step-result.running {
+  background: rgba(22, 93, 255, 0.08);
+  border-left: 3px solid #165dff;
+}
+
+.step-result.pending {
+  background: var(--color-fill-1);
+  border-left: 3px solid var(--color-border-2);
+  opacity: 0.6;
 }
 
 .assertion-icon,
@@ -1475,6 +1759,28 @@ onMounted(() => {
 .step-result-msg {
   color: var(--color-text-3);
   font-size: 12px;
+  flex: 1;
+  min-width: 0;
+  word-break: break-all;
+  overflow-wrap: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.assertion-msg.is-expanded,
+.step-result-msg.is-expanded {
+  -webkit-line-clamp: unset;
+  line-clamp: unset;
+  display: block;
+}
+
+.assertion-msg-wrapper,
+.step-result-msg-wrapper {
+  flex: 1;
+  min-width: 0;
 }
 
 .step-result-number {
@@ -1503,6 +1809,8 @@ onMounted(() => {
   font-size: 12px;
   padding: 2px 0;
   color: var(--color-text-2);
+  word-break: break-all;
+  overflow-wrap: break-word;
 }
 
 .console-log.error {
@@ -1577,5 +1885,132 @@ onMounted(() => {
   color: var(--color-text-3);
   font-family: 'Courier New', monospace;
   font-size: 12px;
+  word-break: break-all;
+}
+
+/* 响应详情样式 */
+.response-headers {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.header-row {
+  display: flex;
+  padding: 2px 0;
+  border-bottom: 1px solid var(--color-border-1);
+}
+
+.header-key {
+  font-weight: 600;
+  color: var(--color-text-2);
+  margin-right: 8px;
+  min-width: 120px;
+}
+
+.header-value {
+  color: var(--color-text-3);
+  word-break: break-all;
+}
+
+.response-body-wrapper {
+  background: var(--color-fill-1);
+  border-radius: 6px;
+  border: 1px solid var(--color-border-2);
+  padding: 12px;
+}
+
+.response-body {
+  margin: 0;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 400px;
+  overflow-y: auto;
+  color: var(--color-text-1);
+}
+
+/* 压力测试增强样式 */
+.metric-card {
+  background: var(--color-fill-1);
+  padding: 16px;
+  border-radius: 8px;
+  text-align: center;
+  border: 1px solid var(--color-border-1);
+}
+
+.metric-label {
+  font-size: 12px;
+  color: var(--color-text-3);
+  margin-bottom: 4px;
+}
+
+.metric-value {
+  font-size: 20px;
+  font-weight: bold;
+  color: var(--color-text-1);
+}
+
+.latency-distribution {
+  background: var(--color-fill-1);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.latency-bar-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: var(--color-bg-1);
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.latency-bar-item.highlight {
+  border-left: 4px solid #165dff;
+  font-weight: bold;
+}
+
+.latency-bar-item.warning {
+  color: #f53f3f;
+}
+
+.latency-bar-item .value {
+  font-family: 'Courier New', monospace;
+}
+
+.status-distribution-card {
+  padding: 12px;
+  border: 1px solid var(--color-border-2);
+  border-radius: 8px;
+  height: 100%;
+}
+
+.load-summary-clean {
+  margin-top: 16px;
+  background: var(--color-fill-1);
+  border-radius: 8px;
+  border-left: 4px solid #165dff;
+  padding: 12px 16px;
+}
+
+.summary-title {
+  font-weight: bold;
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+
+.summary-content {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-line;
+  color: var(--color-text-2);
 }
 </style>
